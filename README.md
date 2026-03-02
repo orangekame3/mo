@@ -48,7 +48,7 @@ $ mo spec.md --target design            # Open in a named group
 By default, `mo` runs a single server process on port `6275`. If a server is already running on the same port, subsequent `mo` invocations add files to the existing session instead of starting a new one.
 
 ``` console
-$ mo README.md          # Starts a server and opens the browser
+$ mo README.md          # Starts mo in the background and opens the browser
 $ mo CHANGELOG.md       # Adds the file to the running server
 ```
 

@@ -38,7 +38,7 @@ var rootCmd = &cobra.Command{
 	Short: "mo is a Markdown viewer that opens .md files in a browser.",
 	Long: `mo is a Markdown viewer that opens .md files in a browser with live-reload.
 
-It starts an HTTP server, renders Markdown files using a built-in React SPA,
+It runs in the background, serving Markdown files using a built-in React SPA,
 and automatically refreshes the browser when files are saved.
 
 Examples:
@@ -52,7 +52,7 @@ Single Server, Multiple Files:
   If a server is already running on the same port, subsequent mo invocations
   add files to the existing session instead of starting a new one.
 
-  $ mo README.md          # Starts a server and opens the browser
+  $ mo README.md          # Starts mo in the background and opens the browser
   $ mo CHANGELOG.md       # Adds the file to the running server
 
   To run a completely separate session, use a different port:
