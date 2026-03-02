@@ -5,11 +5,14 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/k1LoW/mo/internal/xdg"
 )
+
+const logFilePrefix = "mo-"
 
 const (
 	maxSize    = 10 * 1024 * 1024 // 10MB
@@ -49,7 +52,7 @@ func cleanOldLogs(dir string, age time.Duration) {
 	}
 	now := time.Now()
 	for _, e := range entries {
-		if e.IsDir() {
+		if e.IsDir() || !strings.HasPrefix(e.Name(), logFilePrefix) {
 			continue
 		}
 		info, err := e.Info()
@@ -73,8 +76,12 @@ type rotatingWriter struct {
 	size int64
 }
 
+func openLogFile(filename string) (*os.File, error) {
+	return os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+}
+
 func newRotatingWriter(filename string, maxSize int64, maxBackups int) (*rotatingWriter, error) {
-	f, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	f, err := openLogFile(filename)
 	if err != nil {
 		return nil, err
 	}
@@ -113,34 +120,49 @@ func (w *rotatingWriter) Close() error {
 	return w.file.Close()
 }
 
+func (w *rotatingWriter) backupName(i int) string {
+	return fmt.Sprintf("%s.%d", w.filename, i)
+}
+
 func (w *rotatingWriter) rotate() error {
 	if err := w.file.Close(); err != nil {
 		return err
 	}
 
 	// Remove oldest backup
-	oldest := fmt.Sprintf("%s.%d", w.filename, w.maxBackups)
-	os.Remove(oldest)
+	os.Remove(w.backupName(w.maxBackups))
 
 	// Shift existing backups: .2 -> .3, .1 -> .2
 	for i := w.maxBackups - 1; i >= 1; i-- {
-		from := fmt.Sprintf("%s.%d", w.filename, i)
-		to := fmt.Sprintf("%s.%d", w.filename, i+1)
-		if err := os.Rename(from, to); err != nil && !os.IsNotExist(err) {
-			return err
+		if err := os.Rename(w.backupName(i), w.backupName(i+1)); err != nil && !os.IsNotExist(err) {
+			return w.recoverOpen(err)
 		}
 	}
 
 	// Current -> .1
-	if err := os.Rename(w.filename, w.filename+".1"); err != nil && !os.IsNotExist(err) {
-		return err
+	if err := os.Rename(w.filename, w.backupName(1)); err != nil && !os.IsNotExist(err) {
+		return w.recoverOpen(err)
 	}
 
-	f, err := os.OpenFile(w.filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	f, err := openLogFile(w.filename)
 	if err != nil {
 		return err
 	}
 	w.file = f
 	w.size = 0
 	return nil
+}
+
+// recoverOpen reopens the log file so the writer remains functional after a rotation failure.
+func (w *rotatingWriter) recoverOpen(cause error) error {
+	f, err := openLogFile(w.filename)
+	if err != nil {
+		return fmt.Errorf("rotate failed (%w) and recovery open also failed: %w", cause, err)
+	}
+	w.file = f
+	w.size = 0
+	if info, err := f.Stat(); err == nil {
+		w.size = info.Size()
+	}
+	return cause
 }
