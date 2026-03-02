@@ -17,6 +17,8 @@ import { CSS } from "@dnd-kit/utilities";
 import type { FileEntry, Group } from "../hooks/useApi";
 import { removeFile, moveFile } from "../hooks/useApi";
 import { buildFileUrl } from "../utils/groups";
+import type { ViewMode } from "./ViewModeToggle";
+import { TreeView } from "./TreeView";
 
 const MENU_ITEM_CLASS =
   "w-full px-3 py-1.5 text-left text-sm bg-transparent border-none cursor-pointer text-gh-text-secondary hover:bg-gh-bg-hover hover:text-gh-text transition-colors duration-150 flex items-center gap-2";
@@ -162,12 +164,26 @@ function SortableFileItem({
   );
 }
 
+const COLLAPSED_STORAGE_KEY = "mo-sidebar-tree-collapsed";
+
+function getInitialCollapsed(group: string): Set<string> {
+  try {
+    const stored = localStorage.getItem(COLLAPSED_STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (parsed[group]) return new Set(parsed[group]);
+    }
+  } catch { /* ignore */ }
+  return new Set();
+}
+
 interface SidebarProps {
   groups: Group[];
   activeGroup: string;
   activeFileId: number | null;
   onFileSelect: (id: number) => void;
   onFilesReorder: (groupName: string, fileIds: number[]) => void;
+  viewMode: ViewMode;
 }
 
 export function Sidebar({
@@ -176,6 +192,7 @@ export function Sidebar({
   activeFileId,
   onFileSelect,
   onFilesReorder,
+  viewMode,
 }: SidebarProps) {
   const currentGroup = groups.find((g) => g.name === activeGroup);
   const files = currentGroup?.files ?? [];
@@ -183,6 +200,36 @@ export function Sidebar({
   const resizeDragging = useRef(false);
   const [menuOpenId, setMenuOpenId] = useState<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(() =>
+    getInitialCollapsed(activeGroup),
+  );
+
+  // Reset collapsed paths when group changes
+  useEffect(() => {
+    setCollapsedPaths(getInitialCollapsed(activeGroup));
+  }, [activeGroup]);
+
+  const handleToggleCollapse = useCallback(
+    (path: string) => {
+      setCollapsedPaths((prev) => {
+        const next = new Set(prev);
+        if (next.has(path)) {
+          next.delete(path);
+        } else {
+          next.add(path);
+        }
+        // Persist
+        try {
+          const stored = localStorage.getItem(COLLAPSED_STORAGE_KEY);
+          const all = stored ? JSON.parse(stored) : {};
+          all[activeGroup] = [...next];
+          localStorage.setItem(COLLAPSED_STORAGE_KEY, JSON.stringify(all));
+        } catch { /* ignore */ }
+        return next;
+      });
+    },
+    [activeGroup],
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -293,32 +340,49 @@ export function Sidebar({
       style={{ width }}
     >
       <nav className="flex flex-col pb-1">
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext
-            items={files.map((f) => f.id)}
-            strategy={verticalListSortingStrategy}
+        {viewMode === "tree" ? (
+          <TreeView
+            files={files}
+            activeFileId={activeFileId}
+            menuOpenId={menuOpenId}
+            otherGroups={otherGroups}
+            onFileSelect={onFileSelect}
+            onMenuToggle={handleMenuToggle}
+            onOpenInNewTab={handleOpenInNewTab}
+            onMoveToGroup={handleMoveToGroup}
+            onRemove={handleRemove}
+            menuRef={menuRef}
+            collapsedPaths={collapsedPaths}
+            onToggleCollapse={handleToggleCollapse}
+          />
+        ) : (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
           >
-            {files.map((f) => (
-              <SortableFileItem
-                key={f.id}
-                file={f}
-                isActive={f.id === activeFileId}
-                menuOpenId={menuOpenId}
-                otherGroups={otherGroups}
-                onFileSelect={onFileSelect}
-                onMenuToggle={handleMenuToggle}
-                onOpenInNewTab={handleOpenInNewTab}
-                onMoveToGroup={handleMoveToGroup}
-                onRemove={handleRemove}
-                menuRef={menuRef}
-              />
-            ))}
-          </SortableContext>
-        </DndContext>
+            <SortableContext
+              items={files.map((f) => f.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              {files.map((f) => (
+                <SortableFileItem
+                  key={f.id}
+                  file={f}
+                  isActive={f.id === activeFileId}
+                  menuOpenId={menuOpenId}
+                  otherGroups={otherGroups}
+                  onFileSelect={onFileSelect}
+                  onMenuToggle={handleMenuToggle}
+                  onOpenInNewTab={handleOpenInNewTab}
+                  onMoveToGroup={handleMoveToGroup}
+                  onRemove={handleRemove}
+                  menuRef={menuRef}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
+        )}
       </nav>
       {/* Resize handle */}
       <div
