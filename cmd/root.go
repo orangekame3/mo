@@ -112,11 +112,13 @@ func init() {
 }
 
 func run(cmd *cobra.Command, args []string) error {
-	logCleanup, err := logfile.Setup(port)
-	if err != nil {
-		slog.Warn("failed to setup log file, using stderr", "error", err)
-	} else {
-		defer logCleanup()
+	if !foreground || restore != "" {
+		logCleanup, err := logfile.Setup(port)
+		if err != nil {
+			slog.Warn("failed to setup log file, using stderr", "error", err)
+		} else {
+			defer logCleanup()
+		}
 	}
 
 	addr := fmt.Sprintf("localhost:%d", port)
