@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/k1LoW/donegroup"
+	"github.com/k1LoW/mo/internal/logfile"
 	"github.com/k1LoW/mo/internal/server"
 	"github.com/k1LoW/mo/version"
 	"github.com/pkg/browser"
@@ -98,6 +99,13 @@ func init() {
 }
 
 func run(cmd *cobra.Command, args []string) error {
+	logCleanup, err := logfile.Setup(port)
+	if err != nil {
+		slog.Warn("failed to setup log file, using stderr", "error", err)
+	} else {
+		defer logCleanup()
+	}
+
 	addr := fmt.Sprintf("localhost:%d", port)
 
 	if restore != "" {
