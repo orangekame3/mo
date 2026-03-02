@@ -20,8 +20,8 @@ const (
 	maxAge     = 7 * 24 * time.Hour
 )
 
-// LogDir returns the path to the log directory.
-func LogDir() (string, error) {
+// Dir returns the path to the log directory.
+func Dir() (string, error) {
 	stateHome, err := xdg.StateHome()
 	if err != nil {
 		return "", err

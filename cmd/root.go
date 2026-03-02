@@ -346,7 +346,7 @@ func doStatus() error {
 }
 
 func discoverPorts() []int {
-	dir, err := logfile.LogDir()
+	dir, err := logfile.Dir()
 	if err != nil {
 		return nil
 	}
@@ -363,8 +363,8 @@ func discoverPorts() []int {
 			continue
 		}
 		// Exclude rotated backups like "mo-6275.log.1"
-		portStr := strings.TrimSuffix(strings.TrimPrefix(name, "mo-"), ".log")
-		p, err := strconv.Atoi(portStr)
+		raw := strings.TrimSuffix(strings.TrimPrefix(name, "mo-"), ".log")
+		p, err := strconv.Atoi(raw)
 		if err != nil {
 			continue
 		}
