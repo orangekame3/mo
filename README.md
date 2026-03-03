@@ -15,10 +15,13 @@
 - GitHub-flavored Markdown (tables, task lists, footnotes, etc.)
 - Syntax highlighting ([Shiki](https://shiki.style/))
 - [Mermaid](https://mermaid.js.org/) diagram rendering
-- Dark / light theme
-- File grouping
-- Table of contents panel
-- Flat / tree sidebar view with drag-and-drop reorder
+- <img src="images/icons/theme-light.svg" width="16" height="16" alt="dark theme"> Dark / <img src="images/icons/theme-dark.svg" width="16" height="16" alt="light theme"> light theme
+- <img src="images/icons/group.svg" width="16" height="16" alt="group"> File grouping
+- <img src="images/icons/toc.svg" width="16" height="16" alt="toc"> Table of contents panel
+- <img src="images/icons/view-flat.svg" width="16" height="16" alt="flat view"> Flat / <img src="images/icons/view-tree.svg" width="16" height="16" alt="tree view"> tree sidebar view with drag-and-drop reorder
+- <img src="images/icons/raw.svg" width="16" height="16" alt="raw"> Raw markdown view
+- <img src="images/icons/copy.svg" width="16" height="16" alt="copy"> Copy content (Markdown / Text / HTML)
+- <img src="images/icons/restart.svg" width="16" height="16" alt="restart"> Server restart with session preservation
 - Live-reload on save
 
 ## Install
@@ -106,7 +109,7 @@ $ mo --foreground README.md
 
 ### Server restart
 
-Click the restart button (bottom-right corner) to restart the `mo` server process. The current session — all open files and groups — is preserved across the restart. This is useful when you have updated the `mo` binary and want to pick up the new version without re-opening your files.
+Click the <img src="images/icons/restart.svg" width="16" height="16" alt="restart"> restart button (bottom-right corner) to restart the `mo` server process. The current session — all open files and groups — is preserved across the restart. This is useful when you have updated the `mo` binary and want to pick up the new version without re-opening your files.
 
 ### Flags
 
