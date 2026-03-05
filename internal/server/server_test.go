@@ -478,6 +478,201 @@ func TestExportState_WithPatterns(t *testing.T) {
 	}
 }
 
+func TestRemovePattern(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "a.md"), []byte("# A"), 0o600) //nolint:errcheck
+
+	t.Run("removes existing pattern", func(t *testing.T) {
+		s := newTestState(t)
+		pattern := filepath.Join(dir, "*.md")
+		_, err := s.AddPattern(pattern, DefaultGroup)
+		if err != nil {
+			t.Fatalf("AddPattern returned error: %v", err)
+		}
+
+		ok := s.RemovePattern(pattern, DefaultGroup)
+		if !ok {
+			t.Fatal("RemovePattern returned false, want true")
+		}
+
+		patterns := s.Patterns()
+		if len(patterns) != 0 {
+			t.Fatalf("got %d patterns, want 0", len(patterns))
+		}
+	})
+
+	t.Run("returns false for non-existent pattern", func(t *testing.T) {
+		s := newTestState(t)
+		ok := s.RemovePattern("/nonexistent/*.md", DefaultGroup)
+		if ok {
+			t.Fatal("RemovePattern returned true for non-existent pattern")
+		}
+	})
+
+	t.Run("returns false for wrong group", func(t *testing.T) {
+		s := newTestState(t)
+		pattern := filepath.Join(dir, "*.md")
+		_, err := s.AddPattern(pattern, DefaultGroup)
+		if err != nil {
+			t.Fatalf("AddPattern returned error: %v", err)
+		}
+
+		ok := s.RemovePattern(pattern, "other")
+		if ok {
+			t.Fatal("RemovePattern returned true for wrong group")
+		}
+	})
+
+	t.Run("files remain after pattern removal", func(t *testing.T) {
+		s := newTestState(t)
+		pattern := filepath.Join(dir, "*.md")
+		_, err := s.AddPattern(pattern, DefaultGroup)
+		if err != nil {
+			t.Fatalf("AddPattern returned error: %v", err)
+		}
+
+		groups := s.Groups()
+		fileCount := len(groups[0].Files)
+		if fileCount == 0 {
+			t.Fatal("should have files before removal")
+		}
+
+		s.RemovePattern(pattern, DefaultGroup)
+
+		groups = s.Groups()
+		if len(groups) != 1 || len(groups[0].Files) != fileCount {
+			t.Fatal("files should remain after pattern removal")
+		}
+	})
+}
+
+func TestRemoveDirWatch(t *testing.T) {
+	s := newTestState(t)
+
+	t.Run("decrements ref count", func(t *testing.T) {
+		s.mu.Lock()
+		s.watchedDirs["/some/dir"] = 2
+		s.mu.Unlock()
+
+		s.removeDirWatch("/some/dir")
+
+		s.mu.RLock()
+		count := s.watchedDirs["/some/dir"]
+		s.mu.RUnlock()
+
+		if count != 1 {
+			t.Fatalf("watchedDirs count=%d, want 1", count)
+		}
+	})
+
+	t.Run("deletes entry at zero", func(t *testing.T) {
+		s.mu.Lock()
+		s.watchedDirs["/another/dir"] = 1
+		s.mu.Unlock()
+
+		s.removeDirWatch("/another/dir")
+
+		s.mu.RLock()
+		_, exists := s.watchedDirs["/another/dir"]
+		s.mu.RUnlock()
+
+		if exists {
+			t.Fatal("watchedDirs entry should be deleted at zero")
+		}
+	})
+
+	t.Run("no-op for unknown dir", func(t *testing.T) {
+		s.removeDirWatch("/unknown/dir")
+		// Should not panic
+	})
+}
+
+func TestHandleRemovePattern(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "a.md"), []byte("# A"), 0o600) //nolint:errcheck
+
+	t.Run("returns 204 on success", func(t *testing.T) {
+		s := newTestState(t)
+		pattern := filepath.Join(dir, "*.md")
+		_, err := s.AddPattern(pattern, DefaultGroup)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		handler := NewHandler(s)
+		body, err := json.Marshal(removePatternRequest{Pattern: pattern, Group: DefaultGroup})
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest("DELETE", "/_/api/patterns", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("got status %d, want %d: %s", rec.Code, http.StatusNoContent, rec.Body.String())
+		}
+	})
+
+	t.Run("returns 404 for unknown pattern", func(t *testing.T) {
+		s := newTestState(t)
+		handler := NewHandler(s)
+		body, err := json.Marshal(removePatternRequest{Pattern: "/nonexistent/*.md", Group: DefaultGroup})
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest("DELETE", "/_/api/patterns", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("got status %d, want %d", rec.Code, http.StatusNotFound)
+		}
+	})
+}
+
+func TestHandleStatus_PatternsInGroups(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "a.md"), []byte("# A"), 0o600) //nolint:errcheck
+
+	s := newTestState(t)
+	pattern := filepath.Join(dir, "*.md")
+	_, err := s.AddPattern(pattern, DefaultGroup)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	handler := NewHandler(s)
+	req := httptest.NewRequest("GET", "/_/api/status", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp struct {
+		Groups []struct {
+			Name     string   `json:"name"`
+			Patterns []string `json:"patterns,omitempty"`
+		} `json:"groups"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(resp.Groups) != 1 {
+		t.Fatalf("got %d groups, want 1", len(resp.Groups))
+	}
+	if len(resp.Groups[0].Patterns) != 1 || resp.Groups[0].Patterns[0] != pattern {
+		t.Fatalf("got patterns=%v, want [%s]", resp.Groups[0].Patterns, pattern)
+	}
+}
+
 func TestHandleAddPattern(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "a.md"), []byte("# A"), 0o600) //nolint:errcheck

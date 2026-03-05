@@ -28,6 +28,38 @@ func TestResolvePatterns_Valid(t *testing.T) {
 	}
 }
 
+func TestRun_UnwatchWithWatch(t *testing.T) {
+	unwatchPatterns = []string{"**/*.md"}
+	watchPatterns = []string{"**/*.md"}
+	defer func() {
+		unwatchPatterns = nil
+		watchPatterns = nil
+	}()
+
+	err := run(rootCmd, nil)
+	if err == nil {
+		t.Fatal("run should return error when --unwatch and --watch are both specified")
+	}
+	want := "cannot use --unwatch with --watch"
+	if err.Error() != want {
+		t.Fatalf("got error %q, want %q", err.Error(), want)
+	}
+}
+
+func TestRun_UnwatchWithArgs(t *testing.T) {
+	unwatchPatterns = []string{"**/*.md"}
+	defer func() { unwatchPatterns = nil }()
+
+	err := run(rootCmd, []string{"README.md"})
+	if err == nil {
+		t.Fatal("run should return error when --unwatch and args are both specified")
+	}
+	want := "cannot use --unwatch with file arguments"
+	if err.Error() != want {
+		t.Fatalf("got error %q, want %q", err.Error(), want)
+	}
+}
+
 func TestRun_WatchWithArgs(t *testing.T) {
 	t.Run("with glob pattern", func(t *testing.T) {
 		watchPatterns = []string{"**/*.md"}

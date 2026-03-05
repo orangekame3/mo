@@ -417,6 +417,46 @@ func (s *State) Patterns() []*GlobPattern {
 	return result
 }
 
+// PatternsForGroup returns the pattern strings for a specific group.
+func (s *State) PatternsForGroup(groupName string) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var result []string
+	for _, p := range s.patterns {
+		if p.Group == groupName {
+			result = append(result, p.Pattern)
+		}
+	}
+	return result
+}
+
+// RemovePattern removes a glob pattern from the watch list.
+// Returns true if the pattern was found and removed.
+func (s *State) RemovePattern(absPattern, groupName string) bool {
+	var removed *GlobPattern
+	func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for i, p := range s.patterns {
+			if p.Pattern == absPattern && p.Group == groupName {
+				removed = p
+				s.patterns = append(s.patterns[:i], s.patterns[i+1:]...)
+				break
+			}
+		}
+	}()
+
+	if removed == nil {
+		return false
+	}
+
+	s.removeDirWatchesForPattern(removed)
+
+	slog.Info("pattern removed", "pattern", absPattern, "group", groupName)
+	s.sendEvent(sseEvent{Name: "update", Data: "{}"})
+	return true
+}
+
 // RestoreData represents the state to be persisted across restarts.
 type RestoreData struct {
 	Groups   map[string][]string `json:"groups"`
@@ -463,6 +503,42 @@ func (s *State) ExportState() (string, error) {
 	}
 
 	return WriteRestoreFile(data)
+}
+
+func (s *State) removeDirWatchesForPattern(gp *GlobPattern) {
+	if s.watcher == nil {
+		return
+	}
+	if !gp.IsRecursive() {
+		s.removeDirWatch(gp.BaseDir)
+		return
+	}
+
+	filepath.WalkDir(gp.BaseDir, func(path string, d os.DirEntry, err error) error { //nolint:errcheck
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			s.removeDirWatch(path)
+		}
+		return nil
+	})
+}
+
+func (s *State) removeDirWatch(dir string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if count, ok := s.watchedDirs[dir]; ok {
+		count--
+		if count <= 0 {
+			delete(s.watchedDirs, dir)
+			if s.watcher != nil {
+				s.watcher.Remove(dir) //nolint:errcheck
+			}
+		} else {
+			s.watchedDirs[dir] = count
+		}
+	}
 }
 
 func (s *State) watchLoop() {
@@ -654,6 +730,11 @@ type addPatternResponse struct {
 	Matched int `json:"matched"`
 }
 
+type removePatternRequest struct {
+	Pattern string `json:"pattern"`
+	Group   string `json:"group"`
+}
+
 type fileContentResponse struct {
 	Content string `json:"content"`
 	BaseDir string `json:"baseDir"`
@@ -676,6 +757,7 @@ func NewHandler(state *State) http.Handler {
 	mux.HandleFunc("GET /_/api/files/{id}/raw/{path...}", handleFileRaw(state))
 	mux.HandleFunc("POST /_/api/files/open", handleOpenFile(state))
 	mux.HandleFunc("POST /_/api/patterns", handleAddPattern(state))
+	mux.HandleFunc("DELETE /_/api/patterns", handleRemovePattern(state))
 	mux.HandleFunc("POST /_/api/restart", handleRestart(state))
 	mux.HandleFunc("POST /_/api/shutdown", handleShutdown(state))
 	mux.HandleFunc("GET /_/api/status", handleStatus(state))
@@ -911,6 +993,29 @@ func handleAddPattern(state *State) http.HandlerFunc {
 	}
 }
 
+func handleRemovePattern(state *State) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req removePatternRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		group, err := ResolveGroupName(req.Group)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if !state.RemovePattern(req.Pattern, group) {
+			http.Error(w, "pattern not found", http.StatusNotFound)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
 func handleRestart(state *State) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		restoreFile, err := state.ExportState()
@@ -936,26 +1041,34 @@ func handleShutdown(state *State) http.HandlerFunc {
 	}
 }
 
+type statusGroup struct {
+	Name     string       `json:"name"`
+	Files    []*FileEntry `json:"files"`
+	Patterns []string     `json:"patterns,omitempty"`
+}
+
 func handleStatus(state *State) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		patterns := state.Patterns()
-		patternStrs := make([]string, len(patterns))
-		for i, p := range patterns {
-			patternStrs[i] = p.Pattern
+		groups := state.Groups()
+		statusGroups := make([]statusGroup, len(groups))
+		for i, g := range groups {
+			statusGroups[i] = statusGroup{
+				Name:     g.Name,
+				Files:    g.Files,
+				Patterns: state.PatternsForGroup(g.Name),
+			}
 		}
 
 		resp := struct {
-			Version  string   `json:"version"`
-			Revision string   `json:"revision"`
-			PID      int      `json:"pid"`
-			Groups   []Group  `json:"groups"`
-			Patterns []string `json:"patterns,omitempty"`
+			Version  string        `json:"version"`
+			Revision string        `json:"revision"`
+			PID      int           `json:"pid"`
+			Groups   []statusGroup `json:"groups"`
 		}{
 			Version:  version.Version,
 			Revision: version.Revision,
 			PID:      os.Getpid(),
-			Groups:   state.Groups(),
-			Patterns: patternStrs,
+			Groups:   statusGroups,
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(resp); err != nil {

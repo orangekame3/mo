@@ -35,7 +35,8 @@ var (
 	shutdownServer bool
 	foreground     bool
 	statusServer   bool
-	watchPatterns  []string
+	watchPatterns   []string
+	unwatchPatterns []string
 )
 
 var rootCmd = &cobra.Command{
@@ -104,7 +105,8 @@ Glob Patterns:
 
   $ mo -w '**/*.md'                   Watch all .md files recursively
   $ mo -w 'docs/**/*.md' -t docs      Watch docs/ tree in "docs" group
-  $ mo -w '*.md' -w 'docs/**/*.md'    Watch multiple patterns`,
+  $ mo -w '*.md' -w 'docs/**/*.md'    Watch multiple patterns
+  $ mo --unwatch '**/*.md'            Stop watching a pattern`,
 	Args:    cobra.ArbitraryArgs,
 	RunE:    run,
 	Version: version.Version,
@@ -128,6 +130,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&foreground, "foreground", false, "Run mo server in foreground (do not background)")
 	rootCmd.Flags().BoolVar(&statusServer, "status", false, "Show status of all running mo servers")
 	rootCmd.Flags().StringArrayVarP(&watchPatterns, "watch", "w", nil, "Glob pattern to watch for matching files (repeatable)")
+	rootCmd.Flags().StringArrayVar(&unwatchPatterns, "unwatch", nil, "Remove a watched glob pattern (repeatable)")
 }
 
 func run(cmd *cobra.Command, args []string) error {
@@ -148,6 +151,27 @@ func run(cmd *cobra.Command, args []string) error {
 
 	if shutdownServer {
 		return doShutdown(addr)
+	}
+
+	if len(unwatchPatterns) > 0 {
+		if len(watchPatterns) > 0 {
+			return fmt.Errorf("cannot use --unwatch with --watch")
+		}
+		if len(args) > 0 {
+			return fmt.Errorf("cannot use --unwatch with file arguments")
+		}
+
+		resolved, err := resolvePatterns(unwatchPatterns)
+		if err != nil {
+			return err
+		}
+
+		resolvedTarget, err := server.ResolveGroupName(target)
+		if err != nil {
+			return fmt.Errorf("invalid target group name %q: %w", target, err)
+		}
+
+		return doUnwatch(addr, resolved, resolvedTarget)
 	}
 
 	if restore != "" {
@@ -346,10 +370,54 @@ func doShutdown(addr string) error {
 	return nil
 }
 
+func doUnwatch(addr string, patterns []string, groupName string) error {
+	client := &http.Client{Timeout: 2 * time.Second}
+
+	resp, err := client.Get(fmt.Sprintf("http://%s/_/api/groups", addr))
+	if err != nil {
+		return fmt.Errorf("no mo server found on %s", addr)
+	}
+	resp.Body.Close()
+
+	for _, pat := range patterns {
+		body, err := json.Marshal(map[string]string{
+			"pattern": pat,
+			"group":   groupName,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to marshal request: %w", err)
+		}
+
+		req, err := http.NewRequest(http.MethodDelete, fmt.Sprintf("http://%s/_/api/patterns", addr), bytes.NewReader(body))
+		if err != nil {
+			return fmt.Errorf("failed to create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := client.Do(req) //nolint:gosec // URL is constructed from local addr, not user-supplied
+		if err != nil {
+			return fmt.Errorf("failed to send unwatch request: %w", err)
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode == http.StatusNotFound {
+			return fmt.Errorf("watch pattern %q not found in group %q (use --status to see registered patterns)", pat, groupName)
+		}
+		if resp.StatusCode != http.StatusNoContent {
+			return fmt.Errorf("unexpected response from server: %s", resp.Status)
+		}
+
+		slog.Info("pattern removed", "pattern", pat, "group", groupName)
+		fmt.Fprintf(os.Stderr, "mo: unwatched %s\n", pat)
+	}
+
+	return nil
+}
+
 type statusResponse struct {
-	Version  string   `json:"version"`
-	Revision string   `json:"revision"`
-	PID      int      `json:"pid"`
+	Version  string `json:"version"`
+	Revision string `json:"revision"`
+	PID      int    `json:"pid"`
 	Groups   []struct {
 		Name  string `json:"name"`
 		Files []struct {
@@ -357,8 +425,8 @@ type statusResponse struct {
 			ID   int    `json:"id"`
 			Path string `json:"path"`
 		} `json:"files"`
+		Patterns []string `json:"patterns,omitempty"`
 	} `json:"groups"`
-	Patterns []string `json:"patterns,omitempty"`
 }
 
 func doStatus() error {
@@ -398,9 +466,9 @@ func doStatus() error {
 		fmt.Fprintf(os.Stderr, "http://%s (pid %d, %s)\n", addr, status.PID, ver)
 		for _, g := range status.Groups {
 			fmt.Fprintf(os.Stderr, "  %s: %d file(s)\n", g.Name, len(g.Files))
-		}
-		for _, pat := range status.Patterns {
-			fmt.Fprintf(os.Stderr, "  watch: %s\n", pat)
+			if len(g.Patterns) > 0 {
+				fmt.Fprintf(os.Stderr, "    watching: %s\n", strings.Join(g.Patterns, ", "))
+			}
 		}
 		if i < len(ports)-1 {
 			fmt.Fprintln(os.Stderr)
