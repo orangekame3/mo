@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"bufio"
 	"fmt"
 	"log/slog"
 	"net"
@@ -160,6 +161,18 @@ func run(cmd *cobra.Command, args []string) error {
 	addr := fmt.Sprintf("localhost:%d", port)
 
 	if clearBackup {
+		if !backup.Exists(port) {
+			fmt.Fprintf(os.Stderr, "mo: no saved session for port %d\n", port)
+			return nil
+		}
+		fmt.Fprintf(os.Stderr, "mo: clear saved session for port %d? [Y/n] ", port)
+		scanner := bufio.NewScanner(os.Stdin)
+		scanner.Scan()
+		ans := strings.TrimSpace(scanner.Text())
+		if ans != "" && strings.ToLower(ans) != "y" && strings.ToLower(ans) != "yes" {
+			fmt.Fprintln(os.Stderr, "mo: cancelled")
+			return nil
+		}
 		if err := backup.Remove(port); err != nil {
 			return err
 		}
