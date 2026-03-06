@@ -440,11 +440,15 @@ export function MarkdownViewer({ fileId, fileName, revision, onFileOpened, onHea
       code: ({ className, children, ...props }) => {
         const language = extractLanguage(className);
         const code = String(children).replace(/\n$/, "");
+        const isBlock = String(children).endsWith("\n");
         if (language) {
           if (language === "mermaid") {
             return <MermaidBlock code={code} />;
           }
           return <CodeBlock language={language} code={code} />;
+        }
+        if (isBlock) {
+          return <CodeBlock language="text" code={code} />;
         }
         return (
           <code className={className} {...props}>
