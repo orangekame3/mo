@@ -287,6 +287,64 @@ func TestHandleShutdown(t *testing.T) {
 	})
 }
 
+func TestHandleRestart(t *testing.T) {
+	t.Run("returns 202 and signals restartCh", func(t *testing.T) {
+		s := newTestState(t)
+		s.groups[DefaultGroup] = &Group{
+			Name:  DefaultGroup,
+			Files: []*FileEntry{{ID: 1, Name: "a.md", Path: "/a.md"}},
+		}
+		handler := NewHandler(s)
+		req := httptest.NewRequest("POST", "/_/api/restart", nil)
+		rec := httptest.NewRecorder()
+
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("got status %d, want %d", rec.Code, http.StatusAccepted)
+		}
+
+		select {
+		case restoreFile := <-s.RestartCh():
+			if restoreFile == "" {
+				t.Fatal("restartCh should have received a non-empty restore file path")
+			}
+			t.Cleanup(func() {
+				_ = os.Remove(restoreFile) //nostyle:handlerrors
+			})
+		default:
+			t.Fatal("restartCh should have received a signal")
+		}
+	})
+
+	t.Run("does not block on duplicate signal", func(t *testing.T) {
+		s := newTestState(t)
+		s.groups[DefaultGroup] = &Group{
+			Name:  DefaultGroup,
+			Files: []*FileEntry{{ID: 1, Name: "a.md", Path: "/a.md"}},
+		}
+		handler := NewHandler(s)
+
+		for i := 0; i < 2; i++ {
+			req := httptest.NewRequest("POST", "/_/api/restart", nil)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusAccepted {
+				t.Fatalf("call %d: got status %d, want %d", i+1, rec.Code, http.StatusAccepted)
+			}
+		}
+
+		// Drain restartCh and clean up the restore file from the first request
+		select {
+		case restoreFile := <-s.RestartCh():
+			t.Cleanup(func() {
+				_ = os.Remove(restoreFile) //nostyle:handlerrors
+			})
+		default:
+		}
+	})
+}
+
 func TestHandleReorderFiles(t *testing.T) {
 	t.Run("reorders files via HTTP", func(t *testing.T) {
 		s := newTestState(t)

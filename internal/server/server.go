@@ -1036,7 +1036,11 @@ func handleRestart(state *State) http.HandlerFunc {
 		w.WriteHeader(http.StatusAccepted)
 
 		// Send restart signal after response is written
-		state.restartCh <- restoreFile
+		select {
+		case state.restartCh <- restoreFile:
+		default:
+			os.Remove(restoreFile) //nolint:errcheck
+		}
 	}
 }
 
