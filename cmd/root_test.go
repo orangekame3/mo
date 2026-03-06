@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/k1LoW/mo/internal/server"
 )
 
 func TestResolvePatterns_NoGlobChars(t *testing.T) {
@@ -85,6 +88,71 @@ func TestRun_WatchWithArgs(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "shell may have expanded") {
 			t.Fatalf("error should hint shell expansion, got %q", err.Error())
+		}
+	})
+}
+
+func TestFilterValidRestoreData(t *testing.T) {
+	t.Run("keeps only existing files", func(t *testing.T) {
+		dir := t.TempDir()
+		existing := filepath.Join(dir, "a.md")
+		os.WriteFile(existing, []byte("# A"), 0o600) //nolint:errcheck
+		missing := filepath.Join(dir, "missing.md")
+
+		rd := &server.RestoreData{
+			Groups: map[string][]string{
+				"default": {existing, missing},
+			},
+		}
+
+		filesByGroup, _ := filterValidRestoreData(rd)
+		if len(filesByGroup["default"]) != 1 {
+			t.Fatalf("got %d files, want 1", len(filesByGroup["default"]))
+		}
+		if filesByGroup["default"][0] != existing {
+			t.Fatalf("got %s, want %s", filesByGroup["default"][0], existing)
+		}
+	})
+
+	t.Run("omits group when all files missing", func(t *testing.T) {
+		rd := &server.RestoreData{
+			Groups: map[string][]string{
+				"docs": {"/nonexistent/a.md", "/nonexistent/b.md"},
+			},
+		}
+
+		filesByGroup, _ := filterValidRestoreData(rd)
+		if _, ok := filesByGroup["docs"]; ok {
+			t.Fatal("group with all missing files should not appear in result")
+		}
+	})
+
+	t.Run("passes patterns through unchanged", func(t *testing.T) {
+		rd := &server.RestoreData{
+			Groups: map[string][]string{},
+			Patterns: map[string][]string{
+				"default": {"/some/path/*.md"},
+			},
+		}
+
+		_, patternsByGroup := filterValidRestoreData(rd)
+		if len(patternsByGroup["default"]) != 1 {
+			t.Fatalf("got %d patterns, want 1", len(patternsByGroup["default"]))
+		}
+		if patternsByGroup["default"][0] != "/some/path/*.md" {
+			t.Fatalf("got %s, want /some/path/*.md", patternsByGroup["default"][0])
+		}
+	})
+
+	t.Run("empty restore data returns empty results", func(t *testing.T) {
+		rd := &server.RestoreData{}
+
+		filesByGroup, patternsByGroup := filterValidRestoreData(rd)
+		if len(filesByGroup) != 0 {
+			t.Fatalf("got %d groups, want 0", len(filesByGroup))
+		}
+		if len(patternsByGroup) != 0 {
+			t.Fatalf("got %d pattern groups, want 0", len(patternsByGroup))
 		}
 	})
 }

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -19,6 +20,7 @@ import (
 	"time"
 
 	"github.com/k1LoW/donegroup"
+	"github.com/k1LoW/mo/internal/backup"
 	"github.com/k1LoW/mo/internal/logfile"
 	"github.com/k1LoW/mo/internal/server"
 	"github.com/k1LoW/mo/version"
@@ -34,17 +36,18 @@ const (
 )
 
 var (
-	target         string
-	port           int
-	open           bool
-	noOpen         bool
-	restore        string
-	shutdownServer bool
-	restartServer  bool
-	foreground     bool
-	statusServer   bool
+	target          string
+	port            int
+	open            bool
+	noOpen          bool
+	restore         string
+	shutdownServer  bool
+	restartServer   bool
+	foreground      bool
+	statusServer    bool
 	watchPatterns   []string
 	unwatchPatterns []string
+	clearBackup     bool
 )
 
 var rootCmd = &cobra.Command{
@@ -142,6 +145,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&statusServer, "status", false, "Show status of all running mo servers")
 	rootCmd.Flags().StringArrayVarP(&watchPatterns, "watch", "w", nil, "Glob pattern to watch for matching files (repeatable)")
 	rootCmd.Flags().StringArrayVar(&unwatchPatterns, "unwatch", nil, "Remove a watched glob pattern (repeatable)")
+	rootCmd.Flags().BoolVar(&clearBackup, "clear", false, "Clear saved session for the specified port")
 }
 
 func run(cmd *cobra.Command, args []string) error {
@@ -155,6 +159,29 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	addr := fmt.Sprintf("localhost:%d", port)
+
+	if clearBackup {
+		if !backup.Exists(port) {
+			fmt.Fprintf(os.Stderr, "mo: no saved session for port %d\n", port)
+			return nil
+		}
+		fmt.Fprintf(os.Stderr, "mo: clear saved session for port %d? [Y/n] ", port)
+		scanner := bufio.NewScanner(os.Stdin)
+		if !scanner.Scan() {
+			fmt.Fprintln(os.Stderr, "mo: canceled")
+			return nil
+		}
+		ans := strings.TrimSpace(scanner.Text())
+		if ans != "" && strings.ToLower(ans) != "y" && strings.ToLower(ans) != "yes" {
+			fmt.Fprintln(os.Stderr, "mo: canceled")
+			return nil
+		}
+		if err := backup.Remove(port); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "mo: cleared saved session for port %d\n", port)
+		return nil
+	}
 
 	if statusServer {
 		return doStatus()
@@ -234,6 +261,20 @@ func run(cmd *cobra.Command, args []string) error {
 			openBrowser(addr)
 			return nil
 		}
+		// Auto-restore from backup
+		var rd server.RestoreData
+		if err := backup.Load(port, &rd); err != nil {
+			slog.Warn("failed to load backup", "error", err)
+		}
+		filesByGroup, patternsByGroup := filterValidRestoreData(&rd)
+		if len(filesByGroup) > 0 || len(patternsByGroup) > 0 {
+			slog.Info("restoring session from backup", "port", port)
+			fmt.Fprintf(os.Stderr, "mo: restoring previous session for port %d\n", port)
+			if foreground {
+				return startServer(cmd.Context(), addr, filesByGroup, patternsByGroup)
+			}
+			return startBackground(addr, filesByGroup, patternsByGroup)
+		}
 	}
 
 	if (len(files) > 0 || len(patterns) > 0) && tryAddToExisting(addr, files, patterns) {
@@ -250,6 +291,27 @@ func run(cmd *cobra.Command, args []string) error {
 		return startServer(cmd.Context(), addr, filesByGroup, patternsByGroup)
 	}
 	return startBackground(addr, filesByGroup, patternsByGroup)
+}
+
+// filterValidRestoreData validates restore data by checking that file paths still exist.
+func filterValidRestoreData(rd *server.RestoreData) (map[string][]string, map[string][]string) {
+	filesByGroup := make(map[string][]string)
+	for group, paths := range rd.Groups {
+		for _, p := range paths {
+			if _, err := os.Stat(p); err != nil {
+				slog.Info("skipping missing file from backup", "path", p)
+				continue
+			}
+			filesByGroup[group] = append(filesByGroup[group], p)
+		}
+	}
+
+	patternsByGroup := make(map[string][]string)
+	for group, patterns := range rd.Patterns {
+		patternsByGroup[group] = patterns
+	}
+
+	return filesByGroup, patternsByGroup
 }
 
 func loadRestoreData(path string) (map[string][]string, map[string][]string, error) {
@@ -593,6 +655,12 @@ func startServer(ctx context.Context, addr string, filesByGroup map[string][]str
 	defer cleanup()
 
 	state := server.NewState(ctx)
+
+	state.EnableBackup(ctx, func(data server.RestoreData) {
+		if err := backup.Save(port, data); err != nil {
+			slog.Warn("failed to save backup", "error", err)
+		}
+	})
 
 	for group, files := range filesByGroup {
 		for _, f := range files {

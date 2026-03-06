@@ -15,6 +15,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/k1LoW/donegroup"
 )
 
 func newTestState(t *testing.T) *State {
@@ -879,3 +881,120 @@ func (f *flushRecorder) Write(b []byte) (int, error) {
 func (f *flushRecorder) WriteHeader(_ int) {}
 
 func (f *flushRecorder) Flush() {}
+
+func TestEnableBackup_TriggersOnStateChange(t *testing.T) {
+	ctx, cancel := donegroup.WithCancel(context.Background())
+	defer cancel()
+
+	s := NewState(ctx)
+
+	var mu sync.Mutex
+	var saved []RestoreData
+	s.EnableBackup(ctx, func(data RestoreData) {
+		mu.Lock()
+		saved = append(saved, data)
+		mu.Unlock()
+	})
+
+	s.AddFile("/tmp/test-a.md", DefaultGroup)
+
+	// Wait for debounce (1s) + margin
+	time.Sleep(1500 * time.Millisecond)
+
+	mu.Lock()
+	count := len(saved)
+	mu.Unlock()
+
+	if count == 0 {
+		t.Fatal("backup callback should have been called after state change")
+	}
+
+	mu.Lock()
+	last := saved[count-1]
+	mu.Unlock()
+
+	paths, ok := last.Groups[DefaultGroup]
+	if !ok {
+		t.Fatal("saved data should contain default group")
+	}
+	if len(paths) != 1 || paths[0] != "/tmp/test-a.md" {
+		t.Fatalf("got paths=%v, want [/tmp/test-a.md]", paths)
+	}
+}
+
+func TestEnableBackup_FinalSaveOnCancel(t *testing.T) {
+	ctx, cancel := donegroup.WithCancel(context.Background())
+
+	s := NewState(ctx)
+
+	var mu sync.Mutex
+	var saved []RestoreData
+	s.EnableBackup(ctx, func(data RestoreData) {
+		mu.Lock()
+		saved = append(saved, data)
+		mu.Unlock()
+	})
+
+	s.AddFile("/tmp/test-b.md", DefaultGroup)
+
+	// Cancel immediately without waiting for debounce
+	cancel()
+
+	// Wait for the backupLoop goroutine to finish its final save
+	<-s.backupDone
+
+	mu.Lock()
+	count := len(saved)
+	mu.Unlock()
+
+	if count == 0 {
+		t.Fatal("backup callback should have been called on context cancellation")
+	}
+
+	mu.Lock()
+	last := saved[count-1]
+	mu.Unlock()
+
+	paths, ok := last.Groups[DefaultGroup]
+	if !ok {
+		t.Fatal("final save should contain default group")
+	}
+	if len(paths) != 1 || paths[0] != "/tmp/test-b.md" {
+		t.Fatalf("got paths=%v, want [/tmp/test-b.md]", paths)
+	}
+}
+
+func TestEnableBackup_ReflectsLatestState(t *testing.T) {
+	ctx, cancel := donegroup.WithCancel(context.Background())
+	defer cancel()
+
+	s := NewState(ctx)
+
+	var mu sync.Mutex
+	var saved []RestoreData
+	s.EnableBackup(ctx, func(data RestoreData) {
+		mu.Lock()
+		saved = append(saved, data)
+		mu.Unlock()
+	})
+
+	s.AddFile("/tmp/test-c.md", DefaultGroup)
+	s.AddFile("/tmp/test-d.md", DefaultGroup)
+
+	// Wait for debounce
+	time.Sleep(1500 * time.Millisecond)
+
+	mu.Lock()
+	count := len(saved)
+	if count == 0 {
+		mu.Unlock()
+		t.Fatal("backup callback should have been called after state change")
+	}
+	last := saved[count-1]
+	mu.Unlock()
+
+	paths := last.Groups[DefaultGroup]
+	if len(paths) != 2 {
+		t.Fatalf("got %d paths, want 2", len(paths))
+	}
+}

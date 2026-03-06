@@ -37,6 +37,11 @@ type sseEvent struct {
 	Data string // SSE data payload (JSON)
 }
 
+const (
+	eventUpdate      = "update"
+	eventFileChanged = "file-changed"
+)
+
 // GlobPattern represents a glob pattern being watched for new files.
 type GlobPattern struct {
 	Pattern      string // Absolute glob pattern
@@ -60,6 +65,10 @@ type State struct {
 	shutdownCh  chan struct{}
 	patterns    []*GlobPattern
 	watchedDirs map[string]int // directory → reference count
+
+	backupCh     chan struct{}       // dirty signal (buffered, size 1)
+	backupSaveFn func(RestoreData)  // backup write callback
+	backupDone   chan struct{}       // closed when backupLoop exits
 }
 
 func NewState(ctx context.Context) *State {
@@ -120,7 +129,7 @@ func (s *State) AddFile(absPath, groupName string) *FileEntry {
 
 	slog.Info("file added", "path", absPath, "group", groupName, "id", entry.ID)
 
-	s.sendEvent(sseEvent{Name: "update", Data: "{}"})
+	s.sendEvent(sseEvent{Name: eventUpdate, Data: "{}"})
 	return entry
 }
 
@@ -192,7 +201,7 @@ func (s *State) ReorderFiles(groupName string, fileIDs []int) bool {
 	}
 
 	g.Files = reordered
-	s.sendEvent(sseEvent{Name: "update", Data: "{}"})
+	s.sendEvent(sseEvent{Name: eventUpdate, Data: "{}"})
 	return true
 }
 
@@ -252,7 +261,7 @@ func (s *State) MoveFile(id int, targetGroup string) error {
 	}
 	tg.Files = append(tg.Files, file)
 
-	s.sendEvent(sseEvent{Name: "update", Data: "{}"})
+	s.sendEvent(sseEvent{Name: eventUpdate, Data: "{}"})
 	return nil
 }
 
@@ -305,7 +314,7 @@ func (s *State) RemoveFile(id int) bool {
 		}
 	}
 
-	s.sendEvent(sseEvent{Name: "update", Data: "{}"})
+	s.sendEvent(sseEvent{Name: eventUpdate, Data: "{}"})
 	return true
 }
 
@@ -462,7 +471,7 @@ func (s *State) RemovePattern(absPattern, groupName string) bool {
 	if g, ok := s.groups[groupName]; ok && len(g.Files) == 0 && !s.groupHasPatterns(groupName) {
 		delete(s.groups, groupName)
 	}
-	s.sendEvent(sseEvent{Name: "update", Data: "{}"})
+	s.sendEvent(sseEvent{Name: eventUpdate, Data: "{}"})
 	s.mu.Unlock()
 	return true
 }
@@ -493,7 +502,25 @@ func WriteRestoreFile(data RestoreData) (string, error) {
 func (s *State) ExportState() (string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	return WriteRestoreFile(s.snapshotRestoreData())
+}
 
+// EnableBackup starts a background goroutine that periodically saves state
+// via the provided callback when state changes are detected.
+func (s *State) EnableBackup(ctx context.Context, saveFn func(RestoreData)) {
+	s.backupCh = make(chan struct{}, 1)
+	s.backupSaveFn = saveFn
+	s.backupDone = make(chan struct{})
+	donegroup.Go(ctx, func() error {
+		defer close(s.backupDone)
+		s.backupLoop(ctx)
+		return nil
+	})
+}
+
+// snapshotRestoreData creates a RestoreData snapshot of the current state.
+// Caller must hold s.mu (at least RLock).
+func (s *State) snapshotRestoreData() RestoreData {
 	data := RestoreData{
 		Groups: make(map[string][]string, len(s.groups)),
 	}
@@ -512,7 +539,55 @@ func (s *State) ExportState() (string, error) {
 		}
 	}
 
-	return WriteRestoreFile(data)
+	return data
+}
+
+// markDirty signals that state has changed and a backup save is needed.
+// Non-blocking: safe to call while holding s.mu.
+func (s *State) markDirty() {
+	if s.backupCh == nil {
+		return
+	}
+	select {
+	case s.backupCh <- struct{}{}:
+	default:
+	}
+}
+
+func (s *State) backupLoop(ctx context.Context) {
+	const debounce = 1 * time.Second
+	timer := time.NewTimer(debounce)
+	timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			s.saveBackup()
+			return
+		case _, ok := <-s.backupCh:
+			if !ok {
+				return
+			}
+			timer.Reset(debounce)
+		case <-timer.C:
+			s.saveBackup()
+		}
+	}
+}
+
+func (s *State) saveBackup() {
+	if s.backupSaveFn == nil {
+		return
+	}
+	s.mu.RLock()
+	data := s.snapshotRestoreData()
+	s.mu.RUnlock()
+	s.backupSaveFn(data)
 }
 
 // groupHasPatterns reports whether the group has any registered watch patterns.
@@ -616,7 +691,7 @@ func (s *State) watchLoop() {
 func (s *State) notifyFileChanged(ids []int) {
 	for _, id := range ids {
 		s.sendEvent(sseEvent{
-			Name: "file-changed",
+			Name: eventFileChanged,
 			Data: fmt.Sprintf(`{"id":%d}`, id),
 		})
 	}
@@ -644,6 +719,9 @@ func (s *State) sendEvent(e sseEvent) {
 		default:
 			slog.Warn("SSE event dropped (subscriber buffer full)", "event", e.Name)
 		}
+	}
+	if e.Name == eventUpdate {
+		s.markDirty()
 	}
 }
 
