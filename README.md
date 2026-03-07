@@ -147,12 +147,13 @@ Click the <img src="images/icons/restart.svg" width="16" height="16" alt="restar
 
 ### Session backup and restore
 
-`mo` automatically saves session state (open files and watch patterns per group) when files are added or removed. If a `mo` server is stopped and you run `mo` with no arguments on the same port, the previous session is automatically restored.
+`mo` automatically saves session state (open files and watch patterns per group) when files are added or removed. When starting a new server, the previous session is automatically restored and merged with any files specified on the command line. Restored session entries appear first, followed by newly specified files.
 
 ``` console
 $ mo README.md CHANGELOG.md       # Start with two files
 $ mo --shutdown                   # Shut down the server
 $ mo                              # Restores README.md and CHANGELOG.md
+$ mo TODO.md                      # Restores previous session + adds TODO.md
 ```
 
 Use `--clear` to remove a saved session:

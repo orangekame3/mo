@@ -92,6 +92,73 @@ func TestRun_WatchWithArgs(t *testing.T) {
 	})
 }
 
+func TestMergeGroups(t *testing.T) {
+	t.Run("restored files come first, CLI files appended after", func(t *testing.T) {
+		base := map[string][]string{"default": {"/a.md", "/b.md"}}
+		additional := map[string][]string{"default": {"/c.md"}}
+		got := mergeGroups(base, additional)
+		want := []string{"/a.md", "/b.md", "/c.md"}
+		if len(got["default"]) != len(want) {
+			t.Fatalf("got %v, want %v", got["default"], want)
+		}
+		for i, v := range want {
+			if got["default"][i] != v {
+				t.Fatalf("got[%d] = %s, want %s", i, got["default"][i], v)
+			}
+		}
+	})
+
+	t.Run("deduplicates files in the same group", func(t *testing.T) {
+		base := map[string][]string{"default": {"/a.md", "/b.md"}}
+		additional := map[string][]string{"default": {"/b.md", "/c.md"}}
+		got := mergeGroups(base, additional)
+		want := []string{"/a.md", "/b.md", "/c.md"}
+		if len(got["default"]) != len(want) {
+			t.Fatalf("got %v, want %v", got["default"], want)
+		}
+		for i, v := range want {
+			if got["default"][i] != v {
+				t.Fatalf("got[%d] = %s, want %s", i, got["default"][i], v)
+			}
+		}
+	})
+
+	t.Run("merges different groups", func(t *testing.T) {
+		base := map[string][]string{"docs": {"/doc.md"}}
+		additional := map[string][]string{"default": {"/a.md"}}
+		got := mergeGroups(base, additional)
+		if len(got["docs"]) != 1 || got["docs"][0] != "/doc.md" {
+			t.Fatalf("got docs=%v, want [/doc.md]", got["docs"])
+		}
+		if len(got["default"]) != 1 || got["default"][0] != "/a.md" {
+			t.Fatalf("got default=%v, want [/a.md]", got["default"])
+		}
+	})
+
+	t.Run("nil base returns additional only", func(t *testing.T) {
+		additional := map[string][]string{"default": {"/a.md"}}
+		got := mergeGroups(nil, additional)
+		if len(got["default"]) != 1 || got["default"][0] != "/a.md" {
+			t.Fatalf("got %v, want [/a.md]", got["default"])
+		}
+	})
+
+	t.Run("nil additional returns base only", func(t *testing.T) {
+		base := map[string][]string{"default": {"/a.md"}}
+		got := mergeGroups(base, nil)
+		if len(got["default"]) != 1 || got["default"][0] != "/a.md" {
+			t.Fatalf("got %v, want [/a.md]", got["default"])
+		}
+	})
+
+	t.Run("both nil returns nil", func(t *testing.T) {
+		got := mergeGroups(nil, nil)
+		if got != nil {
+			t.Fatalf("got %v, want nil", got)
+		}
+	})
+}
+
 func TestFilterValidRestoreData(t *testing.T) {
 	t.Run("keeps only existing files", func(t *testing.T) {
 		dir := t.TempDir()

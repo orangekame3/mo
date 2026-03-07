@@ -98,6 +98,17 @@ Starting and Stopping:
 
   Use --foreground to keep the mo server in the foreground.
 
+Session Restore:
+  mo automatically saves session state. When starting a new server,
+  the previous session is restored and merged with any specified files.
+
+  $ mo README.md CHANGELOG.md    # Start with two files
+  $ mo --shutdown                # Shut down the server
+  $ mo                           # Restores README.md and CHANGELOG.md
+  $ mo TODO.md                   # Restores previous session + adds TODO.md
+
+  Use --clear to remove a saved session.
+
 Live-Reload:
   mo watches all opened files for changes using filesystem notifications.
   When a file is saved, the browser automatically re-renders the content.
@@ -261,20 +272,6 @@ func run(cmd *cobra.Command, args []string) error {
 			openBrowser(addr)
 			return nil
 		}
-		// Auto-restore from backup
-		var rd server.RestoreData
-		if err := backup.Load(port, &rd); err != nil {
-			slog.Warn("failed to load backup", "error", err)
-		}
-		filesByGroup, patternsByGroup := filterValidRestoreData(&rd)
-		if len(filesByGroup) > 0 || len(patternsByGroup) > 0 {
-			slog.Info("restoring session from backup", "port", port)
-			fmt.Fprintf(os.Stderr, "mo: restoring previous session for port %d\n", port)
-			if foreground {
-				return startServer(cmd.Context(), addr, filesByGroup, patternsByGroup)
-			}
-			return startBackground(addr, filesByGroup, patternsByGroup)
-		}
 	}
 
 	if (len(files) > 0 || len(patterns) > 0) && tryAddToExisting(addr, files, patterns) {
@@ -287,10 +284,48 @@ func run(cmd *cobra.Command, args []string) error {
 		patternsByGroup = map[string][]string{target: patterns}
 	}
 
+	// Restore backup and merge with specified files/patterns
+	var rd server.RestoreData
+	if err := backup.Load(port, &rd); err != nil {
+		slog.Warn("failed to load backup", "error", err)
+	}
+	restoredFiles, restoredPatterns := filterValidRestoreData(&rd)
+	if len(restoredFiles) > 0 || len(restoredPatterns) > 0 {
+		slog.Info("restoring session from backup", "port", port)
+		fmt.Fprintf(os.Stderr, "mo: restoring previous session for port %d\n", port)
+		filesByGroup = mergeGroups(restoredFiles, filesByGroup)
+		patternsByGroup = mergeGroups(restoredPatterns, patternsByGroup)
+	}
+
 	if foreground {
 		return startServer(cmd.Context(), addr, filesByGroup, patternsByGroup)
 	}
 	return startBackground(addr, filesByGroup, patternsByGroup)
+}
+
+// mergeGroups merges base and additional group maps, with base entries first.
+// Entries from additional that already exist in base for the same group are skipped.
+func mergeGroups(base, additional map[string][]string) map[string][]string {
+	if len(base) == 0 && len(additional) == 0 {
+		return nil
+	}
+	merged := make(map[string][]string)
+	for group, items := range base {
+		merged[group] = append(merged[group], items...)
+	}
+	for group, items := range additional {
+		seen := make(map[string]struct{}, len(merged[group]))
+		for _, v := range merged[group] {
+			seen[v] = struct{}{}
+		}
+		for _, v := range items {
+			if _, ok := seen[v]; !ok {
+				merged[group] = append(merged[group], v)
+				seen[v] = struct{}{}
+			}
+		}
+	}
+	return merged
 }
 
 // filterValidRestoreData validates restore data by checking that file paths still exist.
