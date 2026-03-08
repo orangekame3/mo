@@ -15,7 +15,6 @@ import { TocToggle } from "./TocToggle";
 import { CopyButton } from "./CopyButton";
 import { RemoveButton } from "./RemoveButton";
 import { resolveLink, resolveImageSrc, extractLanguage } from "../utils/resolve";
-import { extractText } from "../utils/extractText";
 import { parseFrontmatter } from "../utils/frontmatter";
 import { stripMdxSyntax } from "../utils/mdx";
 import type { TocHeading } from "./TocPanel";
@@ -379,11 +378,16 @@ export function MarkdownViewer({ fileId, fileName, revision, onFileOpened, onHea
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(true);
   const [isRawView, setIsRawView] = useState(false);
-  const headingsRef = useRef<TocHeading[]>([]);
+  const articleRef = useRef<HTMLElement>(null);
+  const [prevFetchKey, setPrevFetchKey] = useState({ fileId, revision });
+
+  if (fileId !== prevFetchKey.fileId || revision !== prevFetchKey.revision) {
+    setPrevFetchKey({ fileId, revision });
+    setLoading(true);
+  }
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     fetchFileContent(fileId)
       .then((data) => {
         if (!cancelled) {
@@ -415,30 +419,8 @@ export function MarkdownViewer({ fileId, fileName, revision, onFileOpened, onHea
     [fileId, onFileOpened],
   );
 
-  // Reset heading collector before each render
-  headingsRef.current = [];
-
-  const createHeading = useCallback(
-    (level: number) =>
-      ({ id, children, ...props }: React.JSX.IntrinsicElements["h1"]) => {
-        const text = extractText(children);
-        if (id) {
-          headingsRef.current.push({ id: String(id), text, level });
-        }
-        const Tag = `h${level}` as "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
-        return <Tag id={id} {...props}>{children}</Tag>;
-      },
-    [],
-  );
-
   const components: Components = useMemo(
     () => ({
-      h1: createHeading(1),
-      h2: createHeading(2),
-      h3: createHeading(3),
-      h4: createHeading(4),
-      h5: createHeading(5),
-      h6: createHeading(6),
       pre: ({ children }) => <>{children}</>,
       code: ({ className, children, ...props }) => {
         const language = extractLanguage(className);
@@ -502,7 +484,7 @@ export function MarkdownViewer({ fileId, fileName, revision, onFileOpened, onHea
         }
       },
     }),
-    [fileId, handleLinkClick, createHeading],
+    [fileId, handleLinkClick],
   );
 
   const parsed = useMemo(() => isRawView ? null : parseFrontmatter(content), [content, isRawView]);
@@ -521,17 +503,29 @@ export function MarkdownViewer({ fileId, fileName, revision, onFileOpened, onHea
         </Markdown>
       </>
     );
-  }, [content, isRawView, components, fileName]);
+  }, [content, isRawView, parsed, components, fileName]);
 
   const prevHeadingsKey = useRef("");
   useEffect(() => {
-    const newHeadings = isRawView ? [] : [...headingsRef.current];
-    const key = newHeadings.map((h) => `${h.id}:${h.level}`).join(",");
+    const newHeadings: TocHeading[] = [];
+    if (!isRawView && articleRef.current) {
+      const els = articleRef.current.querySelectorAll("h1, h2, h3, h4, h5, h6");
+      for (const el of els) {
+        if (el.id) {
+          newHeadings.push({
+            id: el.id,
+            text: el.textContent ?? "",
+            level: parseInt(el.tagName.slice(1), 10),
+          });
+        }
+      }
+    }
+    const key = newHeadings.map((h) => `${h.id}:${h.level}:${h.text}`).join(",");
     if (key !== prevHeadingsKey.current) {
       prevHeadingsKey.current = key;
       onHeadingsChange(newHeadings);
     }
-  }, [content, isRawView, onHeadingsChange, renderedContent]);
+  }, [isRawView, renderedContent, onHeadingsChange]);
 
   if (loading) {
     return <div className="flex items-center justify-center h-50 text-gh-text-secondary text-sm">Loading...</div>;
@@ -539,7 +533,7 @@ export function MarkdownViewer({ fileId, fileName, revision, onFileOpened, onHea
 
   return (
     <div className="flex items-start gap-2">
-      <article className="markdown-body min-w-0 flex-1">
+      <article ref={articleRef} className="markdown-body min-w-0 flex-1">
         {renderedContent}
       </article>
       <div className="shrink-0 flex flex-col gap-2 -mr-4 -mt-4">

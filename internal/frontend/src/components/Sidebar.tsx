@@ -135,8 +135,10 @@ export function Sidebar({
   searchQuery,
   onSearchQueryChange,
 }: SidebarProps) {
-  const currentGroup = groups.find((g) => g.name === activeGroup);
-  const allFiles = currentGroup?.files ?? [];
+  const allFiles = useMemo(() => {
+    const currentGroup = groups.find((g) => g.name === activeGroup);
+    return currentGroup?.files ?? [];
+  }, [groups, activeGroup]);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const searchOpen = searchQuery != null;

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 interface SSECallbacks {
   onUpdate: () => void;
@@ -7,7 +7,9 @@ interface SSECallbacks {
 
 export function useSSE(callbacks: SSECallbacks) {
   const callbacksRef = useRef(callbacks);
-  callbacksRef.current = callbacks;
+  useLayoutEffect(() => {
+    callbacksRef.current = callbacks;
+  });
 
   useEffect(() => {
     let disposed = false;

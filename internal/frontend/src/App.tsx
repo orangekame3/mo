@@ -25,7 +25,9 @@ const VIEWMODE_STORAGE_KEY = "mo-sidebar-viewmode";
 
 export function App() {
   const [groups, setGroups] = useState<Group[]>([]);
-  const [activeGroup, setActiveGroup] = useState<string>("default");
+  const [activeGroup, setActiveGroup] = useState<string>(() =>
+    parseGroupFromPath(window.location.pathname) || "default",
+  );
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [tocOpen, setTocOpen] = useState(false);
@@ -40,10 +42,49 @@ export function App() {
     return {};
   });
   const knownFileIds = useRef<Set<string>>(new Set());
-  const initialFileId = useRef<string | null>(
+  const [initialFileId, setInitialFileId] = useState<string | null>(
     parseFileIdFromSearch(window.location.search),
   );
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(null);
+
+  // Track previous values for render-time state adjustment
+  const [prevGroups, setPrevGroups] = useState<Group[]>([]);
+  const [prevActiveGroup, setPrevActiveGroup] = useState(activeGroup);
+
+  // Adjust derived state during render when groups or activeGroup changes
+  if (groups !== prevGroups || activeGroup !== prevActiveGroup) {
+    setPrevGroups(groups);
+    setPrevActiveGroup(activeGroup);
+
+    // Active file selection and sidebar auto open/close
+    const group = groups.find((g) => g.name === activeGroup);
+    setSidebarOpen(group != null && group.files.length >= 2);
+
+    if (groups.length === 0) {
+      setActiveFileId(null);
+    } else if (!group) {
+      const sortedGroups = [...groups].sort((a, b) => {
+        if (a.name === "default") return 1;
+        if (b.name === "default") return -1;
+        return a.name.localeCompare(b.name);
+      });
+      setActiveGroup(sortedGroups[0].name);
+    } else if (group.files.length === 0) {
+      setActiveFileId(null);
+    } else if (initialFileId != null) {
+      setInitialFileId(null);
+      setActiveFileId(
+        group.files.some((f) => f.id === initialFileId)
+          ? initialFileId
+          : group.files[0].id,
+      );
+    } else {
+      setActiveFileId((prev) => {
+        if (group.files.some((f) => f.id === prev)) return prev;
+        return group.files[0].id;
+      });
+    }
+  }
 
   const loadGroups = useCallback(async () => {
     try {
@@ -60,13 +101,12 @@ export function App() {
 
       setGroups(data);
 
-      if (added.length > 0 && !wasEmpty && initialFileId.current == null) {
+      if (added.length > 0 && !wasEmpty) {
         // Only auto-select if the new file belongs to the current active group
         setActiveGroup((currentGroup) => {
           const group = data.find((g) => g.name === currentGroup);
           if (group) {
             const addedSet = new Set(added);
-            // Select the last file in the group's list that was newly added
             const matched = group.files.filter((f) => addedSet.has(f.id));
             if (matched.length > 0) {
               setActiveFileId(matched[matched.length - 1].id);
@@ -80,55 +120,30 @@ export function App() {
     }
   }, []);
 
+  // Initial data fetch (setState inside .then() is async, not flagged by linter)
   useEffect(() => {
-    loadGroups();
-  }, [loadGroups]);
-
-  useEffect(() => {
-    const group = parseGroupFromPath(window.location.pathname);
-    if (group !== "default") {
-      setActiveGroup(group);
-    }
+    fetchGroups()
+      .then((data) => {
+        knownFileIds.current = allFileIds(data);
+        setGroups(data);
+      })
+      .catch(() => {});
   }, []);
 
+  // Sync URL path with active group
   useEffect(() => {
-    if (groups.length === 0) {
-      setActiveFileId(null);
-      return;
+    const expectedPath = groupToPath(activeGroup);
+    if (window.location.pathname !== expectedPath) {
+      window.history.replaceState(null, "", expectedPath);
     }
+  }, [activeGroup]);
 
-    const group = groups.find((g) => g.name === activeGroup);
-    if (!group) {
-      // activeGroup doesn't exist; redirect to a deterministic fallback group
-      const sortedGroups = [...groups].sort((a, b) => {
-        if (a.name === "default") return 1;
-        if (b.name === "default") return -1;
-        return a.name.localeCompare(b.name);
-      });
-      const fallback = sortedGroups[0].name;
-      setActiveGroup(fallback);
-      window.history.replaceState(null, "", groupToPath(fallback));
-      return;
+  // Clear search params after consuming initial file ID
+  useEffect(() => {
+    if (initialFileId === null && window.location.search) {
+      window.history.replaceState(null, "", window.location.pathname);
     }
-    if (group.files.length === 0) {
-      setActiveFileId(null);
-      return;
-    }
-    if (initialFileId.current != null) {
-      const requestedId = initialFileId.current;
-      initialFileId.current = null;
-      window.history.replaceState(null, "", groupToPath(activeGroup));
-      if (group.files.some((f) => f.id === requestedId)) {
-        setActiveFileId(requestedId);
-        return;
-      }
-    }
-    setActiveFileId((prev) => {
-      const stillExists = group.files.some((f) => f.id === prev);
-      if (stillExists) return prev;
-      return group.files[0].id;
-    });
-  }, [groups, activeGroup]);
+  }, [initialFileId]);
 
   const activeFileName = useMemo(() =>
     groups.find((g) => g.name === activeGroup)?.files.find((f) => f.id === activeFileId)?.name ?? "",
@@ -138,12 +153,6 @@ export function App() {
   useEffect(() => {
     document.title = activeFileName || "mo";
   }, [activeFileName]);
-
-  // Auto open/close sidebar based on file count in active group
-  useEffect(() => {
-    const group = groups.find((g) => g.name === activeGroup);
-    setSidebarOpen(group != null && group.files.length >= 2);
-  }, [groups, activeGroup]);
 
   useSSE({
     onUpdate: () => {
@@ -217,7 +226,7 @@ export function App() {
 
   const activeHeadingId = useActiveHeading(
     headingIds,
-    scrollContainerRef.current,
+    scrollContainer,
   );
 
   const handleHeadingClick = useCallback((id: string) => {
@@ -266,7 +275,7 @@ export function App() {
           onSearchQueryChange={setSearchQuery}
         />}
         <main className="flex-1 flex flex-col overflow-hidden">
-          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-8 bg-gh-bg">
+          <div ref={setScrollContainer} className="flex-1 overflow-y-auto p-8 bg-gh-bg">
             {activeFileId != null ? (
               <MarkdownViewer
                 fileId={activeFileId}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FileEntry, Group } from "../hooks/useApi";
 import { buildTree, type TreeNode } from "../utils/buildTree";
 import { FileContextMenu } from "./FileContextMenu";
@@ -45,17 +45,15 @@ export function TreeView({
   menuRef,
 }: TreeViewProps) {
   const tree = useMemo(() => buildTree(files), [files]);
+  const [prevGroup, setPrevGroup] = useState(activeGroup);
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(() =>
     getInitialCollapsed(activeGroup),
   );
-  const prevGroupRef = useRef(activeGroup);
 
-  useEffect(() => {
-    if (prevGroupRef.current !== activeGroup) {
-      prevGroupRef.current = activeGroup;
-      setCollapsedPaths(getInitialCollapsed(activeGroup));
-    }
-  }, [activeGroup]);
+  if (prevGroup !== activeGroup) {
+    setPrevGroup(activeGroup);
+    setCollapsedPaths(getInitialCollapsed(activeGroup));
+  }
 
   useEffect(() => {
     try {
