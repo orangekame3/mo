@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { addFile, uploadFile } from "./useApi";
 
-function extractFilePaths(dataTransfer: DataTransfer): string[] {
+export function extractFilePaths(dataTransfer: DataTransfer): string[] {
   // Try each data type that may contain file:// URIs
   for (const type of ["text/uri-list", "text/x-moz-url"]) {
     const data = dataTransfer.getData(type);
@@ -15,9 +15,13 @@ function extractFilePaths(dataTransfer: DataTransfer): string[] {
   return [];
 }
 
-function isMarkdown(name: string): boolean {
+export function isMarkdown(name: string): boolean {
   const lower = name.toLowerCase();
   return lower.endsWith(".md") || lower.endsWith(".markdown") || lower.endsWith(".mdx");
+}
+
+function hasFiles(e: DragEvent): boolean {
+  return e.dataTransfer?.types.includes("Files") ?? false;
 }
 
 export function useFileDrop(activeGroup: string): { isDragging: boolean } {
@@ -25,6 +29,7 @@ export function useFileDrop(activeGroup: string): { isDragging: boolean } {
   const dragCounter = useRef(0);
 
   const handleDragEnter = useCallback((e: DragEvent) => {
+    if (!hasFiles(e)) return;
     e.preventDefault();
     dragCounter.current++;
     if (dragCounter.current === 1) {
@@ -33,10 +38,12 @@ export function useFileDrop(activeGroup: string): { isDragging: boolean } {
   }, []);
 
   const handleDragOver = useCallback((e: DragEvent) => {
+    if (!hasFiles(e)) return;
     e.preventDefault();
   }, []);
 
   const handleDragLeave = useCallback((e: DragEvent) => {
+    if (!hasFiles(e)) return;
     e.preventDefault();
     dragCounter.current--;
     if (dragCounter.current === 0) {

@@ -144,7 +144,10 @@ func (s *State) AddUploadedFile(name, content, groupName string) *FileEntry {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	id := FileID("upload:" + content)
+	h := sha256.New()
+	h.Write([]byte("upload:"))
+	h.Write([]byte(content))
+	id := hex.EncodeToString(h.Sum(nil))[:8]
 
 	g, ok := s.groups[groupName]
 	if !ok {
@@ -967,7 +970,9 @@ func handleAddFile(state *State) http.HandlerFunc {
 }
 
 func handleUploadFile(state *State) http.HandlerFunc {
+	const maxUploadSize = 10 << 20 // 10MB
 	return func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
 		var req uploadFileRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)

@@ -22,7 +22,7 @@ export function buildTree(files: FileEntry[]): TreeNode {
     for (const file of uploadedFiles) {
       root.children.push({
         name: file.name,
-        fullPath: file.name,
+        fullPath: `uploaded:${file.id}`,
         children: [],
         file,
       });
@@ -78,7 +78,7 @@ export function buildTree(files: FileEntry[]): TreeNode {
   for (const file of uploadedFiles) {
     root.children.push({
       name: file.name,
-      fullPath: file.name,
+      fullPath: `uploaded:${file.id}`,
       children: [],
       file,
     });
