@@ -1203,15 +1203,16 @@ func TestMoveUploadedFile(t *testing.T) {
 		}
 	})
 
-	t.Run("returns error for duplicate uploaded file in target", func(t *testing.T) {
+	t.Run("deduplicates across groups", func(t *testing.T) {
 		s := newTestState(t)
-		s.AddUploadedFile("a.md", "# Same", "src")
-		s.AddUploadedFile("b.md", "# Same", "dst")
+		e1 := s.AddUploadedFile("a.md", "# Same", "src")
+		e2 := s.AddUploadedFile("b.md", "# Same", "dst")
 
-		srcID := s.groups["src"].Files[0].ID
-		err := s.MoveFile(srcID, "dst")
-		if err == nil {
-			t.Fatal("MoveFile should return error for duplicate uploaded file")
+		if e1 != e2 {
+			t.Fatal("same content uploaded to different groups should return existing entry")
+		}
+		if _, ok := s.groups["dst"]; ok && len(s.groups["dst"].Files) > 0 {
+			t.Fatal("duplicate should not be added to dst group")
 		}
 	})
 }
