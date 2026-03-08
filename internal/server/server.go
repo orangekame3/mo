@@ -296,7 +296,7 @@ func (s *State) RemoveFile(id string) bool {
 		return false
 	}
 
-	slog.Info("file removed", "path", removedPath, "id", id)
+	slog.Info("file removed", "path", removedPath, "id", id) //nolint:gosec // G706: removedPath is from internal state, not direct user input
 
 	// Remove watcher only if no other file references the same path
 	if s.watcher != nil && removedPath != "" {
