@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.16.1](https://github.com/k1LoW/mo/compare/v0.16.0...v0.16.1) - 2026-03-09
+### New Features 🎉
+- feat: preserve scroll position across live-reload and server restart by @k1LoW in https://github.com/k1LoW/mo/pull/90
+### Other Changes
+- feat: add ESLint to frontend and fix all lint errors by @k1LoW in https://github.com/k1LoW/mo/pull/88
+
 ## [v0.16.0](https://github.com/k1LoW/mo/compare/v0.15.2...v0.16.0) - 2026-03-08
 ### Breaking Changes 🛠
 - feat: display deeplinks when adding files via CLI by @k1LoW in https://github.com/k1LoW/mo/pull/86
