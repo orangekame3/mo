@@ -237,3 +237,10 @@ $ make build
 ## References
 
 - [yusukebe/gh-markdown-preview](https://github.com/yusukebe/gh-markdown-preview): GitHub CLI extension to preview Markdown looks like GitHub.
+
+## License
+
+- [MIT License](LICENSE)
+    - Include logo as well as source code.
+    - Only logo license can be selected [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+    - Also, if there is no alteration to the logo and it is used for technical information about mo, I would not say anything if the copyright notice is omitted.
