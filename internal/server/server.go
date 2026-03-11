@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
@@ -106,7 +107,39 @@ func NewState(ctx context.Context) *State {
 	return s
 }
 
-func (s *State) AddFile(absPath, groupName string) *FileEntry {
+// ErrBinaryFile is returned when a file is detected as binary.
+var ErrBinaryFile = errors.New("binary file is not supported")
+
+// isBinaryFile checks whether the file at the given path is binary
+// by reading the first 8KB and looking for NUL bytes (same heuristic as Git).
+func isBinaryFile(path string) (bool, error) {
+	f, err := os.Open(path) //nolint:gosec
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	buf := make([]byte, 8192)
+	n, err := f.Read(buf)
+	if n == 0 {
+		return false, nil
+	}
+	if err != nil && err.Error() != "EOF" {
+		return false, err
+	}
+	return bytes.ContainsRune(buf[:n], 0), nil
+}
+
+func (s *State) AddFile(absPath, groupName string) (*FileEntry, error) {
+	bin, err := isBinaryFile(absPath)
+	if err != nil {
+		// If the file doesn't exist (yet), allow adding it.
+		if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("failed to read file %s: %w", absPath, err)
+		}
+	} else if bin {
+		return nil, fmt.Errorf("%s: %w", absPath, ErrBinaryFile)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -118,7 +151,7 @@ func (s *State) AddFile(absPath, groupName string) *FileEntry {
 
 	for _, f := range g.Files {
 		if f.Path == absPath {
-			return f
+			return f, nil
 		}
 	}
 
@@ -138,7 +171,7 @@ func (s *State) AddFile(absPath, groupName string) *FileEntry {
 	slog.Info("file added", "path", absPath, "group", groupName, "id", entry.ID)
 
 	s.sendEvent(sseEvent{Name: eventUpdate, Data: "{}"})
-	return entry
+	return entry, nil
 }
 
 func (s *State) AddUploadedFile(name, content, groupName string) *FileEntry {
@@ -466,7 +499,12 @@ func (s *State) AddPattern(absPattern, groupName string) ([]*FileEntry, error) {
 	var entries []*FileEntry
 	for _, m := range matches {
 		abs := filepath.Join(base, m)
-		entries = append(entries, s.AddFile(abs, groupName))
+		entry, err := s.AddFile(abs, groupName)
+		if err != nil {
+			slog.Warn("skipping file", "path", abs, "error", err)
+			continue
+		}
+		entries = append(entries, entry)
 	}
 
 	s.watchDirsForPattern(gp)
@@ -902,7 +940,10 @@ func (s *State) matchAndAddFile(path string, patterns []*GlobPattern) {
 			continue
 		}
 		if matched {
-			s.AddFile(path, gp.Group)
+			if _, err := s.AddFile(path, gp.Group); err != nil {
+				slog.Warn("skipping file", "path", path, "error", err)
+				return
+			}
 			slog.Info("auto-added file via glob", "path", path, "pattern", gp.Pattern, "group", gp.Group)
 			return
 		}
@@ -999,7 +1040,11 @@ func handleAddFile(state *State) http.HandlerFunc {
 			return
 		}
 
-		entry := state.AddFile(absPath, group)
+		entry, err := state.AddFile(absPath, group)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(entry); err != nil {
 			slog.Error("failed to encode response", "error", err)
@@ -1221,7 +1266,11 @@ func handleOpenFile(state *State) http.HandlerFunc {
 			groupName = DefaultGroup
 		}
 
-		newEntry := state.AddFile(absPath, groupName)
+		newEntry, err := state.AddFile(absPath, groupName)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(newEntry); err != nil {
 			slog.Error("failed to encode response", "error", err)

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -909,6 +910,9 @@ func TestEnableBackup_TriggersOnStateChange(t *testing.T) {
 
 	s := NewState(ctx)
 
+	tmpFile := filepath.Join(t.TempDir(), "test-a.md")
+	os.WriteFile(tmpFile, []byte("# A"), 0o600) //nolint:errcheck
+
 	var mu sync.Mutex
 	var saved []RestoreData
 	s.EnableBackup(ctx, func(data RestoreData) {
@@ -917,7 +921,7 @@ func TestEnableBackup_TriggersOnStateChange(t *testing.T) {
 		mu.Unlock()
 	})
 
-	s.AddFile("/tmp/test-a.md", DefaultGroup)
+	s.AddFile(tmpFile, DefaultGroup)
 
 	// Wait for debounce (1s) + margin
 	time.Sleep(1500 * time.Millisecond)
@@ -938,8 +942,8 @@ func TestEnableBackup_TriggersOnStateChange(t *testing.T) {
 	if !ok {
 		t.Fatal("saved data should contain default group")
 	}
-	if len(paths) != 1 || paths[0] != "/tmp/test-a.md" {
-		t.Fatalf("got paths=%v, want [/tmp/test-a.md]", paths)
+	if len(paths) != 1 || paths[0] != tmpFile {
+		t.Fatalf("got paths=%v, want [%s]", paths, tmpFile)
 	}
 }
 
@@ -947,6 +951,9 @@ func TestEnableBackup_FinalSaveOnCancel(t *testing.T) {
 	ctx, cancel := donegroup.WithCancel(context.Background())
 
 	s := NewState(ctx)
+
+	tmpFile := filepath.Join(t.TempDir(), "test-b.md")
+	os.WriteFile(tmpFile, []byte("# B"), 0o600) //nolint:errcheck
 
 	var mu sync.Mutex
 	var saved []RestoreData
@@ -956,7 +963,7 @@ func TestEnableBackup_FinalSaveOnCancel(t *testing.T) {
 		mu.Unlock()
 	})
 
-	s.AddFile("/tmp/test-b.md", DefaultGroup)
+	s.AddFile(tmpFile, DefaultGroup)
 
 	// Cancel immediately without waiting for debounce
 	cancel()
@@ -980,8 +987,8 @@ func TestEnableBackup_FinalSaveOnCancel(t *testing.T) {
 	if !ok {
 		t.Fatal("final save should contain default group")
 	}
-	if len(paths) != 1 || paths[0] != "/tmp/test-b.md" {
-		t.Fatalf("got paths=%v, want [/tmp/test-b.md]", paths)
+	if len(paths) != 1 || paths[0] != tmpFile {
+		t.Fatalf("got paths=%v, want [%s]", paths, tmpFile)
 	}
 }
 
@@ -991,6 +998,12 @@ func TestEnableBackup_ReflectsLatestState(t *testing.T) {
 
 	s := NewState(ctx)
 
+	dir := t.TempDir()
+	tmpC := filepath.Join(dir, "test-c.md")
+	tmpD := filepath.Join(dir, "test-d.md")
+	os.WriteFile(tmpC, []byte("# C"), 0o600) //nolint:errcheck
+	os.WriteFile(tmpD, []byte("# D"), 0o600) //nolint:errcheck
+
 	var mu sync.Mutex
 	var saved []RestoreData
 	s.EnableBackup(ctx, func(data RestoreData) {
@@ -999,8 +1012,8 @@ func TestEnableBackup_ReflectsLatestState(t *testing.T) {
 		mu.Unlock()
 	})
 
-	s.AddFile("/tmp/test-c.md", DefaultGroup)
-	s.AddFile("/tmp/test-d.md", DefaultGroup)
+	s.AddFile(tmpC, DefaultGroup)
+	s.AddFile(tmpD, DefaultGroup)
 
 	// Wait for debounce
 	time.Sleep(1500 * time.Millisecond)
@@ -1017,6 +1030,42 @@ func TestEnableBackup_ReflectsLatestState(t *testing.T) {
 	paths := last.Groups[DefaultGroup]
 	if len(paths) != 2 {
 		t.Fatalf("got %d paths, want 2", len(paths))
+	}
+}
+
+func TestAddFile_RejectsBinaryFile(t *testing.T) {
+	s := newTestState(t)
+
+	dir := t.TempDir()
+
+	// Binary file (contains NUL bytes)
+	binFile := filepath.Join(dir, "image.png")
+	os.WriteFile(binFile, []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00}, 0o600) //nolint:errcheck
+
+	_, err := s.AddFile(binFile, DefaultGroup)
+	if err == nil {
+		t.Fatal("expected error for binary file, got nil")
+	}
+	if !errors.Is(err, ErrBinaryFile) {
+		t.Fatalf("expected ErrBinaryFile, got: %v", err)
+	}
+
+	// Text file should succeed
+	txtFile := filepath.Join(dir, "readme.md")
+	os.WriteFile(txtFile, []byte("# Hello"), 0o600) //nolint:errcheck
+
+	entry, err := s.AddFile(txtFile, DefaultGroup)
+	if err != nil {
+		t.Fatalf("unexpected error for text file: %v", err)
+	}
+	if entry == nil {
+		t.Fatal("expected non-nil entry for text file")
+	}
+
+	// Non-existent file should not error
+	_, err = s.AddFile(filepath.Join(dir, "nonexistent.md"), DefaultGroup)
+	if err != nil {
+		t.Fatalf("unexpected error for non-existent file: %v", err)
 	}
 }
 

@@ -988,7 +988,11 @@ func startServer(ctx context.Context, addr string, filesByGroup map[string][]str
 	var deeplinks []deeplinkEntry
 	for group, files := range filesByGroup {
 		for _, f := range files {
-			entry := state.AddFile(f, group)
+			entry, err := state.AddFile(f, group)
+			if err != nil {
+				slog.Warn("skipping file", "path", f, "error", err)
+				continue
+			}
 			deeplinks = append(deeplinks, deeplinkEntry{
 				URL:  buildDeeplink(addr, group, entry.ID),
 				Path: entry.Path,
