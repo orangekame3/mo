@@ -1003,7 +1003,7 @@ func startServer(ctx context.Context, addr string, filesByGroup map[string][]str
 		}
 	}
 	if totalFiles > 0 && skippedFiles == totalFiles {
-		return fmt.Errorf("all %d file(s) were skipped (unsupported file type)", totalFiles)
+		return fmt.Errorf("all %d file(s) were skipped", totalFiles)
 	}
 
 	for group, pats := range patternsByGroup {
