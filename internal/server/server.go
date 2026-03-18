@@ -134,12 +134,11 @@ func extractTitleFromFile(path string) (string, bool) {
 		return "", false
 	}
 	defer f.Close()
-	var buf [headFileSizeLimit]byte
-	n, err := f.Read(buf[:])
-	if err != nil && !errors.Is(err, io.EOF) {
+	data, err := io.ReadAll(io.LimitReader(f, headFileSizeLimit))
+	if err != nil {
 		return "", false
 	}
-	return extractTitle(string(buf[:n])), true
+	return extractTitle(string(data)), true
 }
 
 // FileID generates a deterministic file ID from an absolute path.
@@ -244,12 +243,7 @@ func readFileHead(path string) ([]byte, error) {
 		return nil, err
 	}
 	defer f.Close()
-	var buf [headFileSizeLimit]byte
-	n, err := f.Read(buf[:])
-	if err != nil && !errors.Is(err, io.EOF) {
-		return nil, err
-	}
-	return buf[:n], nil
+	return io.ReadAll(io.LimitReader(f, headFileSizeLimit))
 }
 
 func (s *State) AddFile(absPath, groupName string) (*FileEntry, error) {
