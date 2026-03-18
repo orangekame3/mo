@@ -1565,6 +1565,12 @@ func TestExtractTitle(t *testing.T) {
 		{"tab after hash", "#\tTab Title", "Tab Title"},
 		{"tab indented line", "\t# Not A Heading\n# Real Title", "Real Title"},
 		{"seven hashes", "####### Not A Heading\n# Real Title", "Real Title"},
+		{"longer fence not closed by shorter", "````\n# Not A Title\n```\n````\n# Real Title", "Real Title"},
+		{"tilde fence not closed by backtick", "~~~\n# Not A Title\n```\n~~~\n# Real Title", "Real Title"},
+		{"closing hash sequence", "# Title ###", "Title"},
+		{"closing hash sequence with spaces", "# Title   ## ", "Title"},
+		{"hash only closing", "# ###", ""},
+		{"closing hashes not preceded by space", "# Title#", "Title#"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

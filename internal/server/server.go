@@ -39,7 +39,11 @@ const headFileSizeLimit = 8192
 // extractTitle returns the text of the first Markdown heading (ATX-style)
 // found in content, or "" if none is found.
 func extractTitle(content string) string {
-	inFence := false
+	// Track the active fenced code block: fenceChar is '`' or '~' (0 = not in fence),
+	// fenceLen is the opening fence length. CommonMark requires the closing fence to
+	// use the same character and be at least as long as the opening fence.
+	fenceChar := byte(0)
+	fenceLen := 0
 	for line := range strings.SplitSeq(content, "\n") {
 		// CommonMark: a leading tab equals 4 columns at column 0 — indented code block.
 		if len(line) > 0 && line[0] == '\t' {
@@ -51,13 +55,29 @@ func extractTitle(content string) string {
 			continue
 		}
 		trimmed := strings.TrimSpace(line)
+
+		if fenceChar != 0 {
+			// Inside a fenced code block: look for a matching closing fence.
+			if len(trimmed) > 0 && trimmed[0] == fenceChar {
+				fl := len(trimmed) - len(strings.TrimLeft(trimmed, string(fenceChar)))
+				// Closing fence: same char, >= opening length, no trailing non-space.
+				if fl >= fenceLen && strings.TrimLeft(trimmed[fl:], " \t") == "" {
+					fenceChar = 0
+					fenceLen = 0
+				}
+			}
+			continue
+		}
+
+		// Detect fence opening: 3+ consecutive backticks or tildes.
 		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
-			inFence = !inFence
+			fc := trimmed[0]
+			fl := len(trimmed) - len(strings.TrimLeft(trimmed, string(fc)))
+			fenceChar = fc
+			fenceLen = fl
 			continue
 		}
-		if inFence {
-			continue
-		}
+
 		if strings.HasPrefix(trimmed, "#") {
 			// CommonMark: ATX headings have 1–6 '#' characters.
 			hashes := len(trimmed) - len(strings.TrimLeft(trimmed, "#"))
@@ -70,6 +90,21 @@ func extractTitle(content string) string {
 				continue
 			}
 			title := strings.TrimSpace(after)
+			// Strip optional closing # sequence: "Title ###" → "Title" (CommonMark §4.2).
+			// If the entire trimmed content is #s (e.g. "# ###"), the heading is empty.
+			if len(title) > 0 && title[len(title)-1] == '#' {
+				i := len(title)
+				for i > 0 && title[i-1] == '#' {
+					i--
+				}
+				if i == 0 || (title[i-1] == ' ' || title[i-1] == '\t') {
+					if i == 0 {
+						title = ""
+					} else {
+						title = strings.TrimRight(title[:i], " \t")
+					}
+				}
+			}
 			if title != "" {
 				return title
 			}
