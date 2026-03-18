@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.18.5](https://github.com/k1LoW/mo/compare/v0.18.4...v0.18.5) - 2026-03-18
+### Other Changes
+- docs: add SECURITY.md with vulnerability reporting policy by @k1LoW in https://github.com/k1LoW/mo/pull/119
+
 ## [v0.18.4](https://github.com/k1LoW/mo/compare/v0.18.3...v0.18.4) - 2026-03-15
 ### Other Changes
 - refactor: apply modernize linter suggestions by @k1LoW in https://github.com/k1LoW/mo/pull/113
