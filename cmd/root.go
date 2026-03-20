@@ -39,20 +39,21 @@ const (
 )
 
 var (
-	target          string
-	port            int
-	bind            string
-	open            bool
-	noOpen          bool
-	restore         string
-	shutdownServer  bool
-	restartServer   bool
-	foreground      bool
-	statusServer    bool
-	watchPatterns   []string
-	unwatchPatterns []string
-	clearBackup      bool
-	jsonOutput       bool
+	target                       string
+	port                         int
+	bind                         string
+	open                         bool
+	noOpen                       bool
+	restore                      string
+	shutdownServer               bool
+	restartServer                bool
+	foreground                   bool
+	statusServer                 bool
+	watchPatterns                []string
+	unwatchPatterns              []string
+	closeFiles                   bool
+	clearBackup                  bool
+	jsonOutput                   bool
 	dangerouslyAllowRemoteAccess bool
 )
 
@@ -169,6 +170,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&statusServer, "status", false, "Show status of all running mo servers")
 	rootCmd.Flags().StringArrayVarP(&watchPatterns, "watch", "w", nil, "Glob pattern to watch for matching files (repeatable)")
 	rootCmd.Flags().StringArrayVar(&unwatchPatterns, "unwatch", nil, "Remove a watched glob pattern (repeatable)")
+	rootCmd.Flags().BoolVar(&closeFiles, "close", false, "Close files instead of opening them")
 	rootCmd.Flags().BoolVar(&clearBackup, "clear", false, "Clear saved session for the specified port")
 	rootCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output structured data as JSON to stdout")
 	rootCmd.Flags().BoolVar(&dangerouslyAllowRemoteAccess, "dangerously-allow-remote-access", false, "Allow remote access without authentication. Recommended only for trusted networks.")
@@ -241,6 +243,22 @@ func run(cmd *cobra.Command, args []string) error {
 		}
 
 		return doUnwatch(addr, resolved, resolvedTarget)
+	}
+
+	if closeFiles {
+		if len(watchPatterns) > 0 {
+			return fmt.Errorf("cannot use --close with --watch")
+		}
+		if len(args) == 0 {
+			return fmt.Errorf("--close requires at least one file argument")
+		}
+
+		resolvedTarget, err := server.ResolveGroupName(target)
+		if err != nil {
+			return fmt.Errorf("invalid target group name %q: %w", target, err)
+		}
+
+		return doClose(addr, args, resolvedTarget)
 	}
 
 	if restore != "" {
@@ -813,6 +831,77 @@ func doUnwatch(addr string, patterns []string, groupName string) error {
 		slog.Info("pattern removed", "pattern", pat, "group", groupName)
 		fmt.Fprintf(os.Stderr, "mo: unwatched %s\n", pat)
 	}
+
+	return nil
+}
+
+func doClose(addr string, paths []string, groupName string) error {
+	result, err := probeServer(addr)
+	if err != nil {
+		return err
+	}
+
+	resp, err := result.client.Get(fmt.Sprintf("http://%s/_/api/status", addr))
+	if err != nil {
+		return fmt.Errorf("failed to get server status: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var status statusResponse
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		return fmt.Errorf("failed to decode status: %w", err)
+	}
+
+	pathToID := make(map[string]string)
+	for _, g := range status.Groups {
+		if g.Name == groupName {
+			for _, f := range g.Files {
+				pathToID[f.Path] = f.ID
+			}
+			break
+		}
+	}
+
+	var closedPaths []string
+	for _, p := range paths {
+		absPath, err := filepath.Abs(p)
+		if err != nil {
+			return fmt.Errorf("cannot resolve path %s: %w", p, err)
+		}
+
+		id, ok := pathToID[absPath]
+		if !ok {
+			return fmt.Errorf("file %q not found in group %q (use --status to see files)", absPath, groupName)
+		}
+
+		req, err := http.NewRequest(http.MethodDelete,
+			fmt.Sprintf("http://%s/_/api/files/%s", addr, id), nil)
+		if err != nil {
+			return fmt.Errorf("failed to create request: %w", err)
+		}
+
+		closeResp, err := result.client.Do(req)
+		if err != nil {
+			return fmt.Errorf("failed to send close request: %w", err)
+		}
+		closeResp.Body.Close()
+
+		if closeResp.StatusCode == http.StatusNotFound {
+			return fmt.Errorf("file %q not found", absPath)
+		}
+		if closeResp.StatusCode != http.StatusNoContent {
+			return fmt.Errorf("unexpected response from server: %s", closeResp.Status)
+		}
+
+		slog.Info("file closed", "path", absPath, "id", id, "group", groupName)
+		closedPaths = append(closedPaths, absPath)
+	}
+
+	names := displayNames(closedPaths)
+	for _, name := range names {
+		fmt.Printf("  %s\n", name)
+	}
+	fmt.Fprintf(os.Stderr, "mo: closed %d file(s) from http://%s\n", len(closedPaths), addr)
 
 	return nil
 }

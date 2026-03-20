@@ -219,6 +219,7 @@ $ mo --status --json
 | `--status` | | | Show all running mo servers |
 | `--watch` | `-w` | | Glob pattern to watch for matching files (repeatable) |
 | `--unwatch` | | | Remove a watched glob pattern (repeatable) |
+| `--close` | | | Close files instead of opening them |
 | `--shutdown` | | | Shut down the running mo server |
 | `--restart` | | | Restart the running mo server |
 | `--clear` | | | Clear saved session for the specified port |

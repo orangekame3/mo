@@ -65,6 +65,40 @@ func TestRun_UnwatchWithArgs(t *testing.T) {
 	}
 }
 
+func TestRun_Close(t *testing.T) {
+	t.Run("without args returns error", func(t *testing.T) {
+		closeFiles = true
+		defer func() { closeFiles = false }()
+
+		err := run(rootCmd, nil)
+		if err == nil {
+			t.Fatal("run should return error when --close is specified without file arguments")
+		}
+		want := "--close requires at least one file argument"
+		if err.Error() != want {
+			t.Fatalf("got error %q, want %q", err.Error(), want)
+		}
+	})
+
+	t.Run("with watch returns error", func(t *testing.T) {
+		closeFiles = true
+		watchPatterns = []string{"**/*.md"}
+		defer func() {
+			closeFiles = false
+			watchPatterns = nil
+		}()
+
+		err := run(rootCmd, []string{"README.md"})
+		if err == nil {
+			t.Fatal("run should return error when --close and --watch are both specified")
+		}
+		want := "cannot use --close with --watch"
+		if err.Error() != want {
+			t.Fatalf("got error %q, want %q", err.Error(), want)
+		}
+	})
+}
+
 func TestRun_WatchWithArgs(t *testing.T) {
 	t.Run("with glob pattern", func(t *testing.T) {
 		watchPatterns = []string{"**/*.md"}
