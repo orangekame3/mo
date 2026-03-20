@@ -160,7 +160,14 @@ $ mo                              # Restores README.md and CHANGELOG.md
 $ mo TODO.md                      # Restores previous session + adds TODO.md
 ```
 
-Use `--clear` to remove a saved session:
+Use `--close` to remove specific files from the running server:
+
+``` console
+$ mo --close README.md            # Close a file from the default group
+$ mo --close docs/*.md -t docs    # Close files from the "docs" group
+```
+
+Use `--clear` to remove a saved session. If a server is running, it is automatically restarted with an empty state:
 
 ``` console
 $ mo --clear                      # Clear saved session for the default port
@@ -222,7 +229,7 @@ $ mo --status --json
 | `--close` | | | Close files instead of opening them |
 | `--shutdown` | | | Shut down the running mo server |
 | `--restart` | | | Restart the running mo server |
-| `--clear` | | | Clear saved session for the specified port |
+| `--clear` | | | Clear saved session (restarts server if running) |
 | `--foreground` | | | Run mo server in foreground |
 | `--json` | | | Output structured data as JSON to stdout |
 
