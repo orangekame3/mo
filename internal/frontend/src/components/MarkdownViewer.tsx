@@ -19,6 +19,7 @@ import { resolveLink, resolveImageSrc, extractLanguage } from "../utils/resolve"
 import { parseFrontmatter } from "../utils/frontmatter";
 import { stripMdxSyntax } from "../utils/mdx";
 import { isMarkdownFile, detectLanguage } from "../utils/filetype";
+import type { ZoomContent } from "./ZoomModal";
 import type { TocHeading } from "./TocPanel";
 import type { Components } from "react-markdown";
 import "github-markdown-css/github-markdown.css";
@@ -44,6 +45,7 @@ interface MarkdownViewerProps {
   onTocToggle: () => void;
   onRemoveFile: () => void;
   isWide: boolean;
+  onZoom?: (content: ZoomContent) => void;
 }
 
 function getMermaidTheme(): "dark" | "default" {
@@ -87,7 +89,13 @@ async function renderMermaid(code: string, width?: number): Promise<string> {
   return result;
 }
 
-export function MermaidBlock({ code }: { code: string }) {
+export function MermaidBlock({
+  code,
+  onZoom,
+}: {
+  code: string;
+  onZoom?: (content: ZoomContent) => void;
+}) {
   const [svg, setSvg] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -125,6 +133,7 @@ export function MermaidBlock({ code }: { code: string }) {
     return (
       <div ref={containerRef} className="relative group">
         <div className="overflow-x-auto" dangerouslySetInnerHTML={{ __html: svg }} />
+        {onZoom && <ZoomButton onClick={() => onZoom({ type: "svg", svg })} position="right-18" />}
         <MermaidImageCopyButton svg={svg} />
         <CodeBlockCopyButton code={code} themed />
       </div>
@@ -249,6 +258,38 @@ function svgToPngBlob(svgString: string): Promise<Blob> {
     };
     img.src = dataUrl;
   });
+}
+
+function ZoomButton({
+  onClick,
+  position = "right-2",
+  groupClass = "group-hover:opacity-100",
+}: {
+  onClick: () => void;
+  position?: string;
+  groupClass?: string;
+}) {
+  return (
+    <button
+      className={`absolute ${position} top-2 flex items-center justify-center rounded-md p-1 cursor-pointer transition-all duration-150 border ${themedButtonStyle} opacity-0 ${groupClass}`}
+      onClick={onClick}
+      title="Zoom"
+    >
+      {/* Placeholder icon — will be replaced */}
+      <svg
+        className="size-4"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      >
+        <circle cx="7" cy="7" r="4.5" />
+        <line x1="10.5" y1="10.5" x2="14" y2="14" strokeLinecap="round" />
+        <line x1="5" y1="7" x2="9" y2="7" strokeLinecap="round" />
+        <line x1="7" y1="5" x2="7" y2="9" strokeLinecap="round" />
+      </svg>
+    </button>
+  );
 }
 
 const darkButtonStyle = "border-[#484f58] hover:border-[#8b949e] text-[#8b949e] bg-[#2d333b]";
@@ -398,6 +439,7 @@ export function MarkdownViewer({
   onTocToggle,
   onRemoveFile,
   isWide,
+  onZoom,
 }: MarkdownViewerProps) {
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(true);
@@ -452,7 +494,7 @@ export function MarkdownViewer({
         const isBlock = String(children).endsWith("\n");
         if (language) {
           if (language === "mermaid") {
-            return <MermaidBlock code={code} />;
+            return <MermaidBlock code={code} onZoom={onZoom} />;
           }
           return <CodeBlock language={language} code={code} />;
         }
@@ -466,6 +508,19 @@ export function MarkdownViewer({
         );
       },
       img: ({ src, alt, ...props }) => {
+        const resolvedSrc = resolveImageSrc(src, fileId);
+        if (onZoom && resolvedSrc) {
+          return (
+            <span className="relative inline-block group/img">
+              <img src={resolvedSrc} alt={alt} {...props} />
+              <ZoomButton
+                onClick={() => onZoom({ type: "image", src: resolvedSrc, alt: alt ?? undefined })}
+                position="right-1"
+                groupClass="group-hover/img:opacity-100"
+              />
+            </span>
+          );
+        }
         return <img src={resolveImageSrc(src, fileId)} alt={alt} {...props} />;
       },
       a: ({ href, children, ...props }) => {
@@ -504,7 +559,7 @@ export function MarkdownViewer({
         }
       },
     }),
-    [fileId, handleLinkClick],
+    [fileId, handleLinkClick, onZoom],
   );
 
   const isMarkdown = isMarkdownFile(fileName);
