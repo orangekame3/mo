@@ -626,11 +626,18 @@ func TestIsLoopbackBind(t *testing.T) {
 	}
 }
 
+func writeTestFile(t *testing.T, path string, content []byte) {
+	t.Helper()
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatalf("failed to write test file %s: %v", path, err)
+	}
+}
+
 func TestResolveArgs_Directory(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "a.md"), []byte("# A"), 0o644) //nolint:errcheck
-	os.WriteFile(filepath.Join(dir, "b.md"), []byte("# B"), 0o644) //nolint:errcheck
-	os.WriteFile(filepath.Join(dir, "c.txt"), []byte("text"), 0o644) //nolint:errcheck
+	writeTestFile(t, filepath.Join(dir, "a.md"), []byte("# A"))
+	writeTestFile(t, filepath.Join(dir, "b.md"), []byte("# B"))
+	writeTestFile(t, filepath.Join(dir, "c.txt"), []byte("text"))
 
 	files, dirPatterns, err := resolveArgs([]string{dir}, false)
 	if err != nil {
@@ -651,7 +658,7 @@ func TestResolveArgs_Directory(t *testing.T) {
 
 func TestResolveArgs_DirectoryWithWatch(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "a.md"), []byte("# A"), 0o644) //nolint:errcheck
+	writeTestFile(t, filepath.Join(dir, "a.md"), []byte("# A"))
 
 	files, dirPatterns, err := resolveArgs([]string{dir}, true)
 	if err != nil {
@@ -698,10 +705,10 @@ func TestResolveArgs_EmptyDirectoryWithWatch(t *testing.T) {
 
 func TestResolveArgs_MixedFilesAndDirs(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "a.md"), []byte("# A"), 0o644) //nolint:errcheck
+	writeTestFile(t, filepath.Join(dir, "a.md"), []byte("# A"))
 
 	singleFile := filepath.Join(t.TempDir(), "standalone.md")
-	os.WriteFile(singleFile, []byte("# Standalone"), 0o644) //nolint:errcheck
+	writeTestFile(t, singleFile, []byte("# Standalone"))
 
 	files, dirPatterns, err := resolveArgs([]string{dir, singleFile}, false)
 	if err != nil {
