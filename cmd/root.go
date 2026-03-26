@@ -876,7 +876,7 @@ func doShutdown(addr string) error {
 	}
 
 	slog.Info("shutdown request sent", "addr", addr)
-	fmt.Fprintf(os.Stderr, "mo: shutdown request sent to %s\n", addr)
+	fmt.Fprintf(os.Stderr, "mo: shutdown request sent to http://%s\n", addr)
 	return nil
 }
 
@@ -897,7 +897,7 @@ func doRestart(addr string) error {
 	}
 
 	slog.Info("restart request sent", "addr", addr)
-	fmt.Fprintf(os.Stderr, "mo: restart request sent to %s\n", addr)
+	fmt.Fprintf(os.Stderr, "mo: restart request sent to http://%s\n", addr)
 	return nil
 }
 
