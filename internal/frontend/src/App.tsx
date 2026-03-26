@@ -209,15 +209,7 @@ export function App() {
   const setTocOpen = useCallback(
     (open: boolean) => {
       if (activeFileId == null) return;
-      setTocOpenMap((prev) => {
-        const next = { ...prev, [activeFileId]: open };
-        try {
-          localStorage.setItem(TOC_OPEN_STORAGE_KEY, JSON.stringify(next));
-        } catch {
-          /* ignore */
-        }
-        return next;
-      });
+      setTocOpenMap((prev) => ({ ...prev, [activeFileId]: open }));
     },
     [activeFileId],
   );
@@ -252,6 +244,14 @@ export function App() {
   useEffect(() => {
     localStorage.setItem(SHOW_TITLE_STORAGE_KEY, JSON.stringify(showTitles));
   }, [showTitles]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(TOC_OPEN_STORAGE_KEY, JSON.stringify(tocOpenMap));
+    } catch {
+      /* ignore */
+    }
+  }, [tocOpenMap]);
 
   useEffect(() => {
     try {
