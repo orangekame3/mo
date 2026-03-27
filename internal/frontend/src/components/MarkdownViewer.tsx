@@ -105,7 +105,6 @@ function collectSearchHitMarkers(root: HTMLElement, query: string): SearchHitMar
             height,
           });
         }
-
       }
     }
     current = walker.nextNode();
