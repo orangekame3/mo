@@ -17,7 +17,7 @@ import { useSSE } from "./hooks/useSSE";
 import { useFileDrop } from "./hooks/useFileDrop";
 import { useActiveHeading } from "./hooks/useActiveHeading";
 import { useScrollRestoration, SCROLL_SESSION_KEY } from "./hooks/useScrollRestoration";
-import type { Group, SearchResult } from "./hooks/useApi";
+import type { FileEntry, Group, SearchResult } from "./hooks/useApi";
 import { fetchGroups, fetchSearchResults, removeFile, reorderFiles } from "./hooks/useApi";
 import { allFileIds, parseGroupFromPath, parseFileIdFromSearch, groupToPath } from "./utils/groups";
 import { isMarkdownFile } from "./utils/filetype";
@@ -40,6 +40,13 @@ export function getInitialTocOpenMap(): Record<string, boolean> {
     /* ignore */
   }
   return {};
+}
+
+export function formatTitle(fileEntry: Pick<FileEntry, "name" | "title"> | undefined): string {
+  if (fileEntry == undefined) return "mo";
+  const { name, title } = fileEntry;
+  const fullTitle = title === undefined ? name : `${title} - ${name}`;
+  return `${fullTitle} | mo`;
 }
 
 export function isTocOpenForFile(
@@ -255,8 +262,8 @@ export function App() {
   );
 
   useEffect(() => {
-    document.title = (currentShowTitle && activeFile?.title) || activeFileName || "mo";
-  }, [currentShowTitle, activeFile?.title, activeFileName]);
+    document.title = formatTitle(activeFile);
+  }, [activeFile]);
 
   useSSE({
     onUpdate: () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { getInitialTocOpenMap, isTocOpenForFile, TOC_OPEN_STORAGE_KEY } from "./App";
+import { formatTitle, getInitialTocOpenMap, isTocOpenForFile, TOC_OPEN_STORAGE_KEY } from "./App";
 
 describe("getInitialTocOpenMap", () => {
   beforeEach(() => localStorage.clear());
@@ -49,5 +49,23 @@ describe("isTocOpenForFile", () => {
 
   it("returns false when map has false for the file", () => {
     expect(isTocOpenForFile({ abc: false }, "abc", "readme.md")).toBe(false);
+  });
+});
+
+describe("formatTitle", () => {
+  it("returns `mo` when fileEntry is undefined", () => {
+    expect(formatTitle(undefined)).toBe("mo");
+  });
+
+  it("returns `file name` when title is undefined", () => {
+    expect(formatTitle({ name: "file.md", title: undefined })).toBe(
+      "file.md | mo",
+    );
+  });
+
+  it("returns `title - file name` when title is defined", () => {
+    expect(formatTitle({ name: "file.md", title: "File Title" })).toBe(
+      "File Title - file.md | mo",
+    );
   });
 });
