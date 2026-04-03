@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.23.3](https://github.com/k1LoW/mo/compare/v0.23.2...v0.23.3) - 2026-04-03
+### Dependency Updates ⬆️
+- chore(deps): bump actions/setup-go from 6.3.0 to 6.4.0 in the dependencies group by @dependabot[bot] in https://github.com/k1LoW/mo/pull/157
+- chore(deps): bump the dependencies group in /internal/frontend with 5 updates by @dependabot[bot] in https://github.com/k1LoW/mo/pull/158
+
 ## [v0.23.2](https://github.com/k1LoW/mo/compare/v0.23.1...v0.23.2) - 2026-03-31
 ### Fix bug 🐛
 - feat: add smooth scroll for footnote references by @k1LoW in https://github.com/k1LoW/mo/pull/156
