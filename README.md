@@ -16,6 +16,8 @@
 - Syntax highlighting ([Shiki](https://shiki.style/))
 - [Mermaid](https://mermaid.js.org/) diagram rendering
 - LaTeX math rendering ([KaTeX](https://katex.org/))
+- [GitHub Alerts](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#alerts) (admonitions)
+- Fullscreen zoom modal for images and Mermaid diagrams
 - <img src="images/icons/theme-light.svg" width="16" height="16" alt="dark theme"> Dark / <img src="images/icons/theme-dark.svg" width="16" height="16" alt="light theme"> light theme
 - <img src="images/icons/group.svg" width="16" height="16" alt="group"> File grouping
 - <img src="images/icons/toc.svg" width="16" height="16" alt="toc"> Table of contents panel
@@ -240,6 +242,7 @@ $ mo --status --json
 | `--clear` | | | Clear saved session (restarts server if running) |
 | `--foreground` | | | Run mo server in foreground |
 | `--json` | | | Output structured data as JSON to stdout |
+| `--dangerously-allow-remote-access` | | | Allow remote access without authentication (trusted networks only) |
 
 > [!WARNING]
 > Binding to a non-localhost address exposes mo to the network **without any authentication**. Remote clients can read any file accessible by the user, browse the filesystem via glob patterns, and shut down the server. A confirmation prompt is shown when `--bind` is set to a non-loopback address.
