@@ -70,7 +70,11 @@ export async function fetchFileContent(group: string, id: string): Promise<FileC
   return res.json();
 }
 
-export async function openRelativeFile(group: string, fileId: string, relativePath: string): Promise<FileEntry> {
+export async function openRelativeFile(
+  group: string,
+  fileId: string,
+  relativePath: string,
+): Promise<FileEntry> {
   const res = await fetch(`${groupPath(group)}/files/open`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -94,7 +98,11 @@ export async function reorderFiles(groupName: string, fileIds: string[]): Promis
   if (!res.ok) throw new Error("Failed to reorder files");
 }
 
-export async function moveFile(sourceGroup: string, id: string, targetGroup: string): Promise<void> {
+export async function moveFile(
+  sourceGroup: string,
+  id: string,
+  targetGroup: string,
+): Promise<void> {
   const res = await fetch(`${groupPath(sourceGroup)}/files/${id}/group`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },

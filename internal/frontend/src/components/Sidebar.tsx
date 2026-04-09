@@ -279,14 +279,17 @@ export function Sidebar({
       });
   }, [groups, activeGroup]);
 
-  const handleMoveToGroup = useCallback(async (id: string, group: string) => {
-    setMenuOpenId(null);
-    try {
-      await moveFile(activeGroup, id, group);
-    } catch (err) {
-      window.alert(err instanceof Error ? err.message : "Failed to move file");
-    }
-  }, [activeGroup]);
+  const handleMoveToGroup = useCallback(
+    async (id: string, group: string) => {
+      setMenuOpenId(null);
+      try {
+        await moveFile(activeGroup, id, group);
+      } catch (err) {
+        window.alert(err instanceof Error ? err.message : "Failed to move file");
+      }
+    },
+    [activeGroup],
+  );
 
   const handleCopyPath = useCallback((path: string) => {
     setMenuOpenId(null);
@@ -302,10 +305,13 @@ export function Sidebar({
     [activeGroup],
   );
 
-  const handleRemove = useCallback((id: string) => {
-    setMenuOpenId(null);
-    removeFile(activeGroup, id);
-  }, [activeGroup]);
+  const handleRemove = useCallback(
+    (id: string) => {
+      setMenuOpenId(null);
+      removeFile(activeGroup, id);
+    },
+    [activeGroup],
+  );
 
   const handleMenuToggle = useCallback((id: string) => {
     setMenuOpenId((prev) => (prev === id ? null : id));
