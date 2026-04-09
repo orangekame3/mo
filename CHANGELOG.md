@@ -1,5 +1,13 @@
 # Changelog
 
+## [v1.1.0](https://github.com/k1LoW/mo/compare/v1.0.0...v1.1.0) - 2026-04-09
+### Breaking Changes 🛠
+- refactor: nest file API endpoints under groups path by @k1LoW in https://github.com/k1LoW/mo/pull/167
+### Dependency Updates ⬆️
+- chore(deps-dev): bump vite from 8.0.3 to 8.0.5 in /internal/frontend by @dependabot[bot] in https://github.com/k1LoW/mo/pull/163
+### Other Changes
+- fix: scope uploaded file dedup check to target group only by @k1LoW in https://github.com/k1LoW/mo/pull/166
+
 ## [v1.0.0](https://github.com/k1LoW/mo/compare/v0.23.4...v1.0.0) - 2026-04-05
 
 ## [v0.23.4](https://github.com/k1LoW/mo/compare/v0.23.3...v0.23.4) - 2026-04-04
