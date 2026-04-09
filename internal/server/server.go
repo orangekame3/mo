@@ -317,19 +317,17 @@ func (s *State) AddUploadedFile(name, content, groupName string) *FileEntry {
 	h.Write([]byte(content))
 	id := "u" + hex.EncodeToString(h.Sum(nil))[:7]
 
-	// Check all groups for an existing entry with the same ID
-	for _, grp := range s.groups {
-		for _, f := range grp.Files {
-			if f.ID == id {
-				return f
-			}
-		}
-	}
-
 	g, ok := s.groups[groupName]
 	if !ok {
 		g = &Group{Name: groupName}
 		s.groups[groupName] = g
+	}
+
+	// Check for duplicate within the target group only (consistent with AddFile)
+	for _, f := range g.Files {
+		if f.ID == id {
+			return f
+		}
 	}
 
 	head := content
