@@ -709,6 +709,92 @@ func TestResolveArgs_EmptyDirectory(t *testing.T) {
 	}
 }
 
+func TestStdinName(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{"simple content", "# Hello World"},
+		{"empty content", ""},
+		{"japanese content", "# 日本語テスト"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := stdinName(tt.content)
+			if !strings.HasPrefix(got, "stdin-") {
+				t.Errorf("stdinName(%q) = %q, want prefix 'stdin-'", tt.content, got)
+			}
+			if !strings.HasSuffix(got, ".md") {
+				t.Errorf("stdinName(%q) = %q, want suffix '.md'", tt.content, got)
+			}
+			// "stdin-" (6) + hash (7) + ".md" (3) = 16
+			if len(got) != 16 {
+				t.Errorf("stdinName(%q) = %q (len %d), want len 16", tt.content, got, len(got))
+			}
+		})
+	}
+
+	t.Run("same content produces same name", func(t *testing.T) {
+		a := stdinName("# Hello")
+		b := stdinName("# Hello")
+		if a != b {
+			t.Errorf("same content gave different names: %q vs %q", a, b)
+		}
+	})
+
+	t.Run("different content produces different name", func(t *testing.T) {
+		a := stdinName("# A")
+		b := stdinName("# B")
+		if a == b {
+			t.Errorf("different content gave same name: %q", a)
+		}
+	})
+}
+
+func TestReadStdin(t *testing.T) {
+	t.Run("reads piped content", func(t *testing.T) {
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		content := "# Test Document\n\nHello world."
+		go func() {
+			_, _ = w.Write([]byte(content))
+			w.Close()
+		}()
+
+		name, got, err := readStdin(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != content {
+			t.Errorf("got content %q, want %q", got, content)
+		}
+		if !strings.HasPrefix(name, "stdin-") || !strings.HasSuffix(name, ".md") {
+			t.Errorf("got name %q, want stdin-<hash>.md format", name)
+		}
+	})
+
+	t.Run("empty stdin", func(t *testing.T) {
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.Close()
+
+		name, got, err := readStdin(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != "" {
+			t.Errorf("got content %q, want empty", got)
+		}
+		if !strings.HasPrefix(name, "stdin-") {
+			t.Errorf("got name %q, want stdin- prefix", name)
+		}
+	})
+}
+
 func TestResolveArgs_EmptyDirectoryWithWatch(t *testing.T) {
 	dir := t.TempDir()
 
