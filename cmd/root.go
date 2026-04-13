@@ -383,17 +383,23 @@ func run(cmd *cobra.Command, args []string) error {
 			deeplinks = append(deeplinks, postFiles(result.client, addr, target, files)...)
 			deeplinks = append(deeplinks, postPatterns(result.client, addr, target, patterns)...)
 
+			var stdinUploadErr error
 			if stdinData != nil {
 				entry, err := postUploadedFile(result.client, addr, target, stdinData.Name, stdinData.Content)
 				if err != nil {
+					stdinUploadErr = err
 					slog.Warn("failed to upload stdin content", "error", err)
 				} else {
 					deeplinks = append(deeplinks, entry)
 				}
 			}
 
+			if stdinData != nil && len(files) == 0 && len(patterns) == 0 && stdinUploadErr != nil {
+				return stdinUploadErr
+			}
+
 			added := len(files) + len(patterns)
-			if stdinData != nil {
+			if stdinData != nil && stdinUploadErr == nil {
 				added++
 			}
 			slog.Info("added to existing server", "files", len(files), "patterns", len(patterns), "stdin", stdinData != nil, "addr", addr)
