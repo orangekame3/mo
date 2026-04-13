@@ -61,11 +61,12 @@ $ cat notes.md | mo                     # Read Markdown from stdin
 
 ### Reading from stdin
 
-When no file arguments are given and stdin is a pipe, `mo` reads Markdown content from stdin.
+When no file arguments are given and stdin is redirected (not a terminal), `mo` reads Markdown content from stdin.
 
 ``` console
 $ cat notes.md | mo
 $ some-command | mo --target output
+$ mo < notes.md
 ```
 
 The content is loaded in-memory with a generated name (`stdin-<hash>.md`). Piping the same content again reuses the existing entry (deduplicated by content hash).
