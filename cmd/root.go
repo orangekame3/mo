@@ -344,14 +344,14 @@ func run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Detect stdin pipe when no file arguments are given.
+	// Detect redirected stdin when no file arguments are given.
 	var stdinData *server.UploadedFileData
 	if isStdinRedirected() {
 		if len(args) > 0 {
-			return fmt.Errorf("cannot use stdin pipe with file arguments")
+			return fmt.Errorf("cannot use redirected stdin with file arguments")
 		}
 		if len(watchPatterns) > 0 {
-			return fmt.Errorf("cannot use --watch (-w) with stdin pipe")
+			return fmt.Errorf("cannot use --watch (-w) with redirected stdin")
 		}
 		name, content, err := readStdin(os.Stdin)
 		if err != nil {
@@ -445,7 +445,7 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 	if !isLoopbackBind(bind) && !dangerouslyAllowRemoteAccess {
 		if stdinData != nil {
-			return fmt.Errorf("cannot use stdin pipe with non-loopback bind without --dangerously-allow-remote-access")
+			return fmt.Errorf("cannot use redirected stdin with non-loopback bind without --dangerously-allow-remote-access")
 		}
 		o := termenv.NewOutput(os.Stderr)
 		c := func(s string) termenv.Style { return o.String(s).Foreground(o.Color("208")) }
