@@ -444,6 +444,9 @@ func run(cmd *cobra.Command, args []string) error {
 		slog.Warn("binding to non-loopback address", "bind", bind, "dangerously-allow-remote-access", dangerouslyAllowRemoteAccess)
 	}
 	if !isLoopbackBind(bind) && !dangerouslyAllowRemoteAccess {
+		if stdinData != nil {
+			return fmt.Errorf("cannot use stdin pipe with non-loopback bind without --dangerously-allow-remote-access")
+		}
 		o := termenv.NewOutput(os.Stderr)
 		c := func(s string) termenv.Style { return o.String(s).Foreground(o.Color("208")) }
 		fmt.Fprintln(os.Stderr, c("SECURITY WARNING:").Bold(),
